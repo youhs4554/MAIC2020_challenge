@@ -1,4 +1,5 @@
 data
+*.pth
 *.csv
 *.npy
 *.npz
