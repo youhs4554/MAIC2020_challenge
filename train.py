@@ -10,13 +10,13 @@ from models.baseline import BasicConv1d
 from datasets.maic2020 import MAIC2020
 from utils.metrics import *
 from utils.losses import BCE_with_class_weights
+from utils.lr_scheduler import LR_Wramer
 
 if __name__ == "__main__":
-    BATCH_SIZE = 512
+    BATCH_SIZE = 1024
     VALIDATION_SPLIT = 0.1
     N_EPOCHS = 10
-    MEAN = 65.0
-    STD = 65.0
+    ZERO_CROSSING = 65.0
     EXP_HOME = "./experiments"
 
     verion_ix = len(os.listdir(EXP_HOME))
@@ -25,7 +25,7 @@ if __name__ == "__main__":
 
     # Prepare Dataset
     ds = MAIC2020(infile="data/train_cases.csv", SRATE=100, MINUTES_AHEAD=5,
-                  transform=lambda x: (x-MEAN)/STD)
+                  transform=lambda x: (x-ZERO_CROSSING)/ZERO_CROSSING)
 
     # random shuffle
     random.seed(0)       # fix seed for reproducitivy
@@ -45,18 +45,30 @@ if __name__ == "__main__":
     val_dataloader = DataLoader(
         val_ds, batch_size=BATCH_SIZE, num_workers=4, shuffle=False, pin_memory=torch.cuda.is_available())
 
-    # Define model (preproduce baseline implemented at https://github.com/vitaldb/maic2020/blob/master/maic_data_cnn.py)
-    # 6-layers 1d-CNNs
-    model = BasicConv1d(dims=[1, 64, 64, 64, 64, 64, 64])
+    # # Define model (preproduce baseline implemented at https://github.com/vitaldb/maic2020/blob/master/maic_data_cnn.py)
+    # # 6-layers 1d-CNNs
+    # model = BasicConv1d(dims=[1, 64, 64, 64, 64, 64, 64])
+
+    from models.resnet1d import resnet18
+    from models.nl_conv1d import NL_Conv1d
+
+    backbone = resnet18()
+    model = NL_Conv1d(backbone=backbone)
     crit = BCE_with_class_weights(class_weights={0: 1, 1: 1})
 
     if torch.cuda.is_available():
         model.cuda()
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    # optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = torch.optim.SGD(
+        model.parameters(), lr=1e-2, momentum=0.9, nesterov=True, weight_decay=2e-3)
+    scheduler = torch.optim.lr_scheduler.StepLR(
+        optimizer, step_size=7, gamma=0.1)
+    warmer = LR_Wramer(optimizer, scheduler=scheduler,
+                       until=5*len(train_dataloader))
 
     best_score = 0.0
-    best_ep = 0
+    best_ep = 1
 
     for ep in range(1, N_EPOCHS+1):
         for phase, dataloader in zip(['train', 'val'], [train_dataloader, val_dataloader]):
@@ -95,6 +107,7 @@ if __name__ == "__main__":
                     optimizer.zero_grad()
                     loss.backward()
                     optimizer.step()
+                    warmer.step(epoch=ep)
 
                 running_loss += loss.item()
 
@@ -110,7 +123,8 @@ if __name__ == "__main__":
                 # remove previous best model
                 prev_model = os.path.join(
                     EXP_SUB_DIR, f"epoch={best_ep}.pth")
-                os.system(f"rm {prev_model}")
+                if os.path.exists(prev_model):
+                    os.system(f"rm {prev_model}")
 
                 # update best_score & best_ep
                 best_score = epoch_auprc

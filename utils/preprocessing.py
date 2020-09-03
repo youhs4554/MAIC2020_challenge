@@ -26,9 +26,6 @@ def prepare_data(infile='../data/train_cases.csv', save_dir="../data/processed",
         weight = row['weight']
         height = row['height']
 
-        if len(x_train) > 15:
-            break
-
         vals = pd.read_csv(os.path.join(os.path.dirname(infile), "train_data", '{}.csv'.format(caseid)),
                            header=None).values.flatten()
 
@@ -38,7 +35,7 @@ def prepare_data(infile='../data/train_cases.csv', save_dir="../data/processed",
         non_event_idx = []
         while i < len(vals) - SRATE * (20 + (1 + MINUTES_AHEAD) * 60):
             segx = vals[i:i + SRATE * 20]
-            segy = vals[i + SRATE * (20 + MINUTES_AHEAD * 60)                        :i + SRATE * (20 + (1 + MINUTES_AHEAD) * 60)]
+            segy = vals[i + SRATE * (20 + MINUTES_AHEAD * 60):i + SRATE * (20 + (1 + MINUTES_AHEAD) * 60)]
 
             # 결측값 10% 이상이면
             if np.mean(np.isnan(segx)) > 0.1 or \
@@ -57,7 +54,7 @@ def prepare_data(infile='../data/train_cases.csv', save_dir="../data/processed",
             event = 1 if np.nanmax(segy) < 65 else 0
             if event:  # event
                 event_idx.append(i)
-            else:
+            elif np.nanmin(segy) > 65:  # non event
                 non_event_idx.append(i)
             x_train.append(
                 [age, sex, weight, height] + segx.tolist())
