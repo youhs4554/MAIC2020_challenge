@@ -13,7 +13,7 @@ from utils.losses import BCE_with_class_weights
 from utils.lr_scheduler import LR_Wramer
 
 if __name__ == "__main__":
-    BATCH_SIZE = 1024
+    BATCH_SIZE = 1024 * torch.cuda.device_count()
     VALIDATION_SPLIT = 0.1
     N_EPOCHS = 10
     ZERO_CROSSING = 65.0
@@ -49,11 +49,14 @@ if __name__ == "__main__":
     # # 6-layers 1d-CNNs
     # model = BasicConv1d(dims=[1, 64, 64, 64, 64, 64, 64])
 
-    from models.resnet1d import resnet18
-    from models.nl_conv1d import NL_Conv1d
+    import models.resnet1d
+    from models.non_local.nl_conv1d import NL_Conv1d
 
-    backbone = resnet18()
+    backbone = models.resnet1d.resnet18()
     model = NL_Conv1d(backbone=backbone)
+    if torch.cuda.device_count() > 1:
+        model = nn.DataParallel(model)
+
     crit = BCE_with_class_weights(class_weights={0: 1, 1: 1})
 
     if torch.cuda.is_available():
@@ -117,7 +120,7 @@ if __name__ == "__main__":
             epoch_auc = compute_auc(y_true, y_score)
 
             print(
-                f"[EP={ep}][{phase}] ====> LOSS: {epoch_loss:.4f}, ACCURACY: {epoch_acc:.4f}, AUPRC: {epoch_auprc:.4f}, AUC: {epoch_auc:.4f}")
+                f"[EP={ep}][{phase}] ====> LOSS: {epoch_loss:.6f}, ACCURACY: {epoch_acc:.6f}, AUPRC: {epoch_auprc:.6f}, AUC: {epoch_auc:.6f}")
 
             if phase == "val" and epoch_auprc > best_score:
                 # remove previous best model

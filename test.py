@@ -1,5 +1,6 @@
 from torch.utils.data import TensorDataset, DataLoader
 import torch
+import torch.nn as nn
 import os
 import numpy as np
 import pandas as pd
@@ -7,9 +8,9 @@ from models.baseline import BasicConv1d
 import tqdm
 
 if __name__ == "__main__":
-    TEST_FILE = "./data/test1_x.csv"
+    TEST_FILE = "/data/.cache/datasets/MAIC2020/test2_x.csv"
     DATA_ROOT = os.path.join("/data", ".cache", "datasets", "MAIC2020")
-    MODEL_PATH = "./experiments/version-0/epoch=10.pth"
+    MODEL_PATH = "./experiments/version-8/epoch=10.pth"
     VERSION_DIR = os.path.dirname(MODEL_PATH)
 
     # test set 로딩
@@ -25,7 +26,7 @@ if __name__ == "__main__":
         np.savez_compressed(os.path.join(DATA_ROOT, 'x_test.npz'), test_data)
         print('done', flush=True)
 
-    BATCH_SIZE = 1024
+    BATCH_SIZE = 1024 * torch.cuda.device_count()
 
     test_data -= 65
     test_data /= 65
@@ -46,11 +47,16 @@ if __name__ == "__main__":
     # 6-layers 1d-CNNs
     # model = BasicConv1d(dims=[1, 64, 64, 64, 64, 64, 64])
 
-    from models.resnet1d import resnet18
-    from models.nl_conv1d import NL_Conv1d
+    import models.resnet1d
+    from models.non_local.nl_conv1d import NL_Conv1d
 
-    backbone = resnet18()
+    backbone = models.resnet1d.resnet18()
     model = NL_Conv1d(backbone=backbone)
+    if torch.cuda.device_count() > 1:
+        model = nn.DataParallel(model)
+
+    if torch.cuda.is_available():
+        model.cuda()
 
     print(f"load weights from {MODEL_PATH}...", flush=True, end='')
     model.load_state_dict(torch.load(MODEL_PATH))
@@ -60,6 +66,9 @@ if __name__ == "__main__":
     y_pred = []
     for _ in tqdm.tqdm(range(len(test_dataloader)), desc="Test loop"):
         x_test, = next(test_dataloader)
+        if torch.cuda.is_available():
+            x_test = x_test.cuda()
+
         with torch.no_grad():
             out = model(x_test)
         y_pred += out.flatten().detach().cpu().numpy().tolist()

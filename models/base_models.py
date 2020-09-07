@@ -153,3 +153,30 @@ class NoneLocalBlockNd(nn.Module):
         z = W_y + x
 
         return z
+
+
+class StocasticPoolNd(nn.Module):
+    def __init__(self, kernel_size, stride=None, dimension=1):
+        super().__init__()
+
+        assert 1 <= dimension <= 3, f"not supported dimension of {dimension}, should be in [1...3]"
+
+        if isinstance(kernel_size, int):
+            kernel_size = tuple([kernel_size]*dimension)
+        if isinstance(stride, int):
+            stride = tuple([stride]*dimension)
+
+        if stride is not None:
+            stride = kernel_size
+
+
+    def forward(self, x):
+        if self.train:
+            pass
+        else:
+            pass
+        # import torch.nn.functional as F
+        # ...
+        # F.conv1d(x, kernel)
+        
+        return x
