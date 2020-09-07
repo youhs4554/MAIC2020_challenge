@@ -52,7 +52,6 @@ CUDA_VISIBLE_DEVICES=0 python test.py --...
 
 ## TODO
 
-- [ ] NL position test (`res2`~`res5`)
 - [ ] pytorch-lightning
 - [ ] integrate patients info
 - [ ] add unsupervised methods

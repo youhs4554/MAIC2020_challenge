@@ -46,6 +46,11 @@ Currently, this codebase supports the following models:
 | `res4`   | -     | -     | [link](https://www.dropbox.com/s/woh99y2hll1mlqv/irCSN_152_Sports1M_from_scratch_f99918785.pkl?dl=0) |
 | `res5`   | -     | -     | [link](https://www.dropbox.com/s/woh99y2hll1mlqv/irCSN_152_Sports1M_from_scratch_f99918785.pkl?dl=0) |
 
+## TODO
+
+- [ ] NL position test (`res2`~`res5`)
+- [ ] Avg pooling -> Stocastic Pooling
+
 ## References
 
 1. Xiaolong Wang, Ross Girshick, Abhinav Gupta, Kaiming He. **Non-Local Neural Networks.** CVPR 2018.
