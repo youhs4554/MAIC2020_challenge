@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 
+
 class ShuffleV2Block(nn.Module):
     def __init__(self, in_planes, out_planes, mid_channels, *, kernel_size, stride):
         super(ShuffleV2Block, self).__init__()
@@ -20,7 +21,8 @@ class ShuffleV2Block(nn.Module):
             nn.BatchNorm2d(mid_channels),
             nn.ReLU(inplace=True),
 
-            nn.Conv2d(mid_channels, mid_channels, kernel_size=kernel_size, stride=stride, padding=pad, groups=mid_channels, bias=False),
+            nn.Conv2d(mid_channels, mid_channels, kernel_size=kernel_size,
+                      stride=stride, padding=pad, groups=mid_channels, bias=False),
             nn.BatchNorm2d(mid_channels),
 
             nn.Conv2d(mid_channels, outputs, 1, 1, 0, bias=False),
@@ -31,7 +33,8 @@ class ShuffleV2Block(nn.Module):
 
         if stride == 2:
             branch_proj = [
-                nn.Conv2d(in_planes, in_planes, kernel_size, stride, pad, groups=in_planes, bias=False),
+                nn.Conv2d(in_planes, in_planes, kernel_size, stride,
+                          pad, groups=in_planes, bias=False),
                 nn.BatchNorm2d(in_planes),
                 nn.Conv2d(in_planes, in_planes, 1, 1, 0, bias=False),
                 nn.BatchNorm2d(in_planes),
@@ -65,9 +68,9 @@ class ShuffleV2Block(nn.Module):
 class ShuffleNetV2(nn.Module):
     def __init__(self, n_class=1000, model_size='0.5x'):
         super(ShuffleNetV2, self).__init__()
-        print ('model size is ', model_size)
+        print('model size is ', model_size)
 
-        self.stage_repeats = [4 ,8, 4]
+        self.stage_repeats = [4, 8, 4]
         self.model_size = model_size
 
         if model_size == '0.5x':
@@ -80,7 +83,6 @@ class ShuffleNetV2(nn.Module):
             self.stage_out_channels = [-1, 24, 244, 488, 976, 2048]
         else:
             raise NotImplementedError
-
 
         input_channel = self.stage_out_channels[1]
         self.first_conv = nn.Sequential(
@@ -97,25 +99,31 @@ class ShuffleNetV2(nn.Module):
 
             for i in range(numrepeat):
                 if i == 0:
-                    self.features.append(ShuffleV2Block(input_channel, output_channel, mid_channels=output_channel//2, kernel_size=3, stride=2))
+                    self.features.append(ShuffleV2Block(
+                        input_channel, output_channel, mid_channels=output_channel//2, kernel_size=3, stride=2))
                 else:
-                    self.features.append(ShuffleV2Block(input_channel // 2, output_channel, mid_channels=output_channel//2, kernel_size=3, stride=1))
+                    self.features.append(ShuffleV2Block(
+                        input_channel // 2, output_channel, mid_channels=output_channel//2, kernel_size=3, stride=1))
                 input_channel = output_channel
 
         self.features = nn.Sequential(*self.features)
 
         self.conv_last = nn.Sequential(
-            nn.Conv2d(input_channel, self.stage_out_channels[-1], 1, 1, 0, bias=False),
+            nn.Conv2d(input_channel,
+                      self.stage_out_channels[-1], 1, 1, 0, bias=False),
             nn.BatchNorm2d(self.stage_out_channels[-1]),
             nn.ReLU(inplace=True)
         )
 
-        self.globalpool = nn.AdaptiveAvgPool2d((1,1))
+        self.globalpool = nn.AdaptiveAvgPool2d((1, 1))
         self.dropout = nn.Dropout(0.2)
         self.fc = nn.Linear(self.stage_out_channels[-1], 1, bias=False)
         self._initialize_weights()
 
     def forward(self, x):
+        # reshape 1d -> 2d
+        x = x.view(x.size(0), 1, 40, 50)
+
         x = self.first_conv(x)
         x = self.maxpool(x)
         x = self.features(x)
@@ -143,7 +151,7 @@ class ShuffleNetV2(nn.Module):
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0.0001)
                 nn.init.constant_(m.running_mean, 0)
-            if isinstance(m , nn.BatchNorm1d):
+            if isinstance(m, nn.BatchNorm1d):
                 nn.init.constant_(m.weight, 1)
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0.0001)
@@ -152,6 +160,7 @@ class ShuffleNetV2(nn.Module):
                 nn.init.normal_(m.weight, 0.01)
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
+
 
 def shufflenet_v2():
     return ShuffleNetV2(n_class=1)

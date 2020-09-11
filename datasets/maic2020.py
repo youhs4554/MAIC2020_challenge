@@ -12,7 +12,7 @@ class MAIC2020(torch.utils.data.Dataset):
     save_dir = os.path.join("/data", ".cache", "datasets", "MAIC2020")
     os.system("mkdir -p {}".format(save_dir))
 
-    def __init__(self, infile='data/train_cases.csv', SRATE=100, MINUTES_AHEAD=5, transform=None):
+    def __init__(self, infile='data/train_cases.csv', SRATE=100, MINUTES_AHEAD=5, transform=None, dimension="1d"):
         if len(list(filter(lambda p: os.path.splitext(p)[1] == ".npz", os.listdir(self.save_dir)))) < 2:
             self.X, self.y_true = prepare_data(
                 infile, save_dir=self.save_dir,
