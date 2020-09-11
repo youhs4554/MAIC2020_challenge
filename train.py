@@ -31,7 +31,7 @@ if __name__ == "__main__":
     # Prepare Dataset
     ds = MAIC2020(infile="data/train_cases.csv", SRATE=100, MINUTES_AHEAD=5,
                   transform=lambda x: (x-MEAN)/STD)
-
+    ##aim dfasdfsf
     # random shuffle
     random.seed(0)       # fix seed for reproducitivy
     ixs = torch.randperm(len(ds))
