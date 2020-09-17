@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader, Subset
 import tqdm
 import random
 import os
+import math
 
 from models.baseline import BasicConv1d
 from datasets.maic2020 import MAIC2020
@@ -41,21 +42,21 @@ if __name__ == "__main__":
     print(f"Train: {len(train_ds)}, Validation: {len(val_ds)}")
 
     train_dataloader = DataLoader(
-        train_ds, batch_size=BATCH_SIZE, num_workers=4, shuffle=True, pin_memory=torch.cuda.is_available())
+        train_ds, batch_size=BATCH_SIZE, num_workers=16, shuffle=True, pin_memory=torch.cuda.is_available())
     val_dataloader = DataLoader(
-        val_ds, batch_size=BATCH_SIZE, num_workers=4, shuffle=False, pin_memory=torch.cuda.is_available())
+        val_ds, batch_size=BATCH_SIZE, num_workers=16, shuffle=False, pin_memory=torch.cuda.is_available())
 
     # # Define model (preproduce baseline implemented at https://github.com/vitaldb/maic2020/blob/master/maic_data_cnn.py)
     # # 6-layers 1d-CNNs
     # model = BasicConv1d(dims=[1, 64, 64, 64, 64, 64, 64])
 
-    # import models.resnet1d
-    # from models.non_local.nl_conv1d import NL_Conv1d
-    # backbone = models.resnet1d.resnet18()
-    # model = NL_Conv1d(backbone=backbone)
+    import models.resnet1d
+    from models.non_local.nl_conv1d import NL_Conv1d
+    backbone = models.resnet1d.resnet18()
+    model = NL_Conv1d(backbone=backbone, squad="0,2,2,0")
 
-    from models.shufflenet import shufflenet_v2
-    model = shufflenet_v2()
+    # from models.shufflenet import shufflenet_v2
+    # model = shufflenet_v2()
     if torch.cuda.device_count() > 1:
         model = nn.DataParallel(model)
 
@@ -66,11 +67,11 @@ if __name__ == "__main__":
 
     # optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     optimizer = torch.optim.SGD(
-        model.parameters(), lr=1e-2, momentum=0.9, nesterov=True, weight_decay=2e-3)
-    scheduler = torch.optim.lr_scheduler.StepLR(
-        optimizer, step_size=7, gamma=0.1)
-    warmer = LR_Wramer(optimizer, scheduler=scheduler,
-                       until=5*len(train_dataloader))
+        model.parameters(), lr=1e-2, momentum=0.95, weight_decay=1e-3)
+    # scheduler = torch.optim.lr_scheduler.StepLR(
+    #     optimizer, step_size=math.floor(2/3*N_EPOCHS), gamma=0.1)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        optimizer, milestones=[math.floor(1/3*N_EPOCHS), math.floor(2/3*N_EPOCHS)], gamma=0.1)
 
     best_score = 0.0
     best_ep = 1
@@ -112,7 +113,7 @@ if __name__ == "__main__":
                     optimizer.zero_grad()
                     loss.backward()
                     optimizer.step()
-                    warmer.step(epoch=ep)
+                    # warmer.step(epoch=ep) #### disable lr-warmup
 
                 running_loss += loss.item()
 

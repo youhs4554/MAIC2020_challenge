@@ -10,7 +10,7 @@ import torch.nn as nn
 if __name__ == "__main__":
     TEST_FILE = "./data/.cache/datasets/MAIC2020/test2_x.csv"
     DATA_ROOT = os.path.join("/data", ".cache", "datasets", "MAIC2020")
-    MODEL_PATH = "./experiments/version-14/epoch=1.pth"
+    MODEL_PATH = "./experiments/version-27/epoch=9.pth"
     VERSION_DIR = os.path.dirname(MODEL_PATH)
 
     # test set 로딩
@@ -26,7 +26,7 @@ if __name__ == "__main__":
         np.savez_compressed(os.path.join(DATA_ROOT, 'x_test.npz'), test_data)
         print('done', flush=True)
 
-    BATCH_SIZE = 1024
+    BATCH_SIZE = 1024 * torch.cuda.device_count()
 
     test_data -= 65
     test_data /= 65
@@ -47,14 +47,13 @@ if __name__ == "__main__":
     # 6-layers 1d-CNNs
     # model = BasicConv1d(dims=[1, 64, 64, 64, 64, 64, 64])
 
-    # from models.resnet1d import resnet18
-    # from models.nl_conv1d import NL_Conv1d
+    import models.resnet1d
+    from models.non_local.nl_conv1d import NL_Conv1d
+    backbone = models.resnet1d.resnet18()
+    model = NL_Conv1d(backbone=backbone, squad="0,2,2,0")
 
-    # backbone = resnet18()
-    # model = NL_Conv1d(backbone=backbone)
-
-    from models.shufflenet import shufflenet_v2
-    model = shufflenet_v2()
+    # from models.shufflenet import shufflenet_v2
+    # model = shufflenet_v2()
 
     if torch.cuda.device_count() > 1:
         model = nn.DataParallel(model)
