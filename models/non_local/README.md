@@ -12,45 +12,34 @@ The Non-Local(NL) operation, in action recognition, computes weight matrix repre
 - generic; can cope with variable input size
   - 1D, 2D, 3D conv version of NL can easilty be implemented
 
-We deflated 2D ResNet into 1D and placed one NL block at the last stage(i.e. res5) of the ResNet, and proceed 10 epochs of training.
+We deflated 2D ResNet into 1D and placed some NL blocks after residual blocks, and proceed 10 epochs of training.
 Currently, this codebase supports the following models:
 
 - R18
-- R34
-- R50
+- ~~R34, R50, R101~~
+
+R34, R50, R101 are not included for memory efficiency.
 
 ### R18
 
-| Position | AUPRC   | AUROC   | Pretrained model                                                                                     |
-| -------- | ------- | ------- | ---------------------------------------------------------------------------------------------------- |
-| `res2`   | -       | -       | [link](https://www.dropbox.com/s/woh99y2hll1mlqv/irCSN_152_Sports1M_from_scratch_f99918785.pkl?dl=0) |
-| `res3`   | -       | -       | [link](https://www.dropbox.com/s/woh99y2hll1mlqv/irCSN_152_Sports1M_from_scratch_f99918785.pkl?dl=0) |
-| `res4`   | -       | -       | [link](https://www.dropbox.com/s/woh99y2hll1mlqv/irCSN_152_Sports1M_from_scratch_f99918785.pkl?dl=0) |
-| `res5`   | 0.46943 | 0.92330 | [link](https://www.dropbox.com/s/woh99y2hll1mlqv/irCSN_152_Sports1M_from_scratch_f99918785.pkl?dl=0) |
-
-### R34
-
-| Position | AUPRC | AUROC | Pretrained model                                                                                     |
-| -------- | ----- | ----- | ---------------------------------------------------------------------------------------------------- |
-| `res2`   | -     | -     | [link](https://www.dropbox.com/s/woh99y2hll1mlqv/irCSN_152_Sports1M_from_scratch_f99918785.pkl?dl=0) |
-| `res3`   | -     | -     | [link](https://www.dropbox.com/s/woh99y2hll1mlqv/irCSN_152_Sports1M_from_scratch_f99918785.pkl?dl=0) |
-| `res4`   | -     | -     | [link](https://www.dropbox.com/s/woh99y2hll1mlqv/irCSN_152_Sports1M_from_scratch_f99918785.pkl?dl=0) |
-| `res5`   | -     | -     | [link](https://www.dropbox.com/s/woh99y2hll1mlqv/irCSN_152_Sports1M_from_scratch_f99918785.pkl?dl=0) |
-
-### R50
-
-| Position | AUPRC | AUROC | Pretrained model                                                                                     |
-| -------- | ----- | ----- | ---------------------------------------------------------------------------------------------------- |
-| `res2`   | -     | -     | [link](https://www.dropbox.com/s/woh99y2hll1mlqv/irCSN_152_Sports1M_from_scratch_f99918785.pkl?dl=0) |
-| `res3`   | -     | -     | [link](https://www.dropbox.com/s/woh99y2hll1mlqv/irCSN_152_Sports1M_from_scratch_f99918785.pkl?dl=0) |
-| `res4`   | -     | -     | [link](https://www.dropbox.com/s/woh99y2hll1mlqv/irCSN_152_Sports1M_from_scratch_f99918785.pkl?dl=0) |
-| `res5`   | -     | -     | [link](https://www.dropbox.com/s/woh99y2hll1mlqv/irCSN_152_Sports1M_from_scratch_f99918785.pkl?dl=0) |
+| # of NLBlocks[`res1`,`res2`,`res3`,`res4`,`res5`] |   AUPRC    |   AUROC    |                                           Pretrained model                                           |
+| :-----------------------------------------------: | :--------: | :--------: | :--------------------------------------------------------------------------------------------------: |
+|                     0,0,0,0,1                     |  0.46943   |  0.92330   | [link](https://www.dropbox.com/s/woh99y2hll1mlqv/irCSN_152_Sports1M_from_scratch_f99918785.pkl?dl=0) |
+|                     0,0,2,3,0                     | **0.4877** | **0.9239** | [link](https://www.dropbox.com/s/woh99y2hll1mlqv/irCSN_152_Sports1M_from_scratch_f99918785.pkl?dl=0) |
 
 ## TODO
 
-- [ ] NL position test (`res2`~`res5`)
-- [ ] Avg pooling -> Stocastic Pooling
+- [x] ~~NL position test code~~
+- [ ] More regularization methods on abstracted features
+
+* Dropout
+* Maxout[[2]](https://arxiv.org/abs/1302.4389)
+* Stochastic pooling[[3]](https://arxiv.org/abs/1301.3557)
+* BERT pooling[[4]](https://arxiv.org/abs/2008.01232)
 
 ## References
 
 1. Xiaolong Wang, Ross Girshick, Abhinav Gupta, Kaiming He. **Non-Local Neural Networks.** CVPR 2018.
+2. Goodfellow, Ian, et al. "Maxout networks." International conference on machine learning. PMLR, 2013.
+3. Zeiler, et al. "Stochastic pooling for regularization of deep convolutional neural networks." arXiv preprint (2013).
+4. Kalfaoglu, et al. "Late Temporal Modeling in 3D CNN Architectures with BERT for Action Recognition." arXiv preprint (2020).
