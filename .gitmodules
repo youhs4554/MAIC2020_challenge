@@ -1,0 +1,3 @@
+[submodule "tools"]
+	path = tools
+	url = https://github.com/artest08/LateTemporalModeling3DCNN.git
