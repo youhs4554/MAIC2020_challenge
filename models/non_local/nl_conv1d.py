@@ -5,13 +5,17 @@ from collections import OrderedDict
 import math
 
 from models.base_models import NLBlockND
+from tools.models.BERT.bert import BERT5
 
 
 class NL_Conv1d(nn.Module):
-    def __init__(self, backbone, squad):
+    def __init__(self, backbone, squad, use_ext=False):
         super().__init__()
 
+        self.use_ext = use_ext
+
         fdim = backbone.fc.in_features
+        hidden_dim = fdim // 4
 
         del backbone.avgpool
         del backbone.fc
@@ -29,13 +33,29 @@ class NL_Conv1d(nn.Module):
         squad = dict(zip(layerNames, eval(squad)))
 
         self.netConfig = [64, 64, 128, 256, 512]
-        # self.netConfig = [64, 256, 512, 1024, 2048]
+        if fdim == 2048:
+            # deeper CNNs
+            self.netConfig = [64, 256, 512, 1024, 2048]
 
         # pSG blocks
         self.block_a = self.make_layers("layer1", n_blocks=squad.get("layer1"))
         self.block_b = self.make_layers("layer2", n_blocks=squad.get("layer2"))
         self.block_c = self.make_layers("layer3", n_blocks=squad.get("layer3"))
         self.block_d = self.make_layers("layer4", n_blocks=squad.get("layer4"))
+
+        if use_ext:
+            # embedding layer for external data
+            self.embedding = nn.Sequential(
+                nn.Linear(4, hidden_dim),
+                nn.ReLU(inplace=True),
+                nn.Dropout(0.3),
+                nn.Linear(hidden_dim, fdim),
+                nn.ReLU(inplace=True)
+            )
+
+        fdim = fdim * 2 if use_ext else fdim
+
+        self.bert_pool = BERT5(fdim, 63, hidden=fdim, n_layers=1, attn_heads=8)
 
         # classifier
         self.classifier = nn.Linear(fdim, 1)
@@ -65,16 +85,38 @@ class NL_Conv1d(nn.Module):
 
         return nn.Sequential(*layers)
 
-    def forward(self, x):
+    def _forward(self, *inputs, extraction):
+        if len(inputs) == 2:
+            x, ext = inputs
+        else:
+            x, = inputs
+
         x = self.stem(x)
         x = self.block_a(x)
         x = self.block_b(x)
         x = self.block_c(x)
         x = self.block_d(x)
 
-        x = F.adaptive_avg_pool1d(x, (1,)).flatten(
-            1)  # avg-pool along with time-axis
+        # N,C,D -> N,D,C
+        x = x.transpose(1, 2)
+
+        bert_outputs, _ = self.bert_pool(x)
+        x = bert_outputs[:, 0, :]
+
+        if self.use_ext:
+            # embedding of external data
+            ext_emb = self.embedding(ext)
+
+            x = torch.cat((x, ext_emb), dim=1)
+
+        if extraction:
+            return x
+
         x = self.classifier(x)
         x = torch.sigmoid(x)  # sigmoid output
 
         return x
+
+    def forward(self, *inputs, **kwargs):
+        out = self._forward(*inputs, **kwargs)
+        return out

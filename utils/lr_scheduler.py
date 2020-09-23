@@ -1,4 +1,4 @@
-class LR_Wramer():
+class LR_Warmer():
     def __init__(self, optimizer, scheduler=None, until=2000):
         super().__init__()
         self.optimizer = optimizer
