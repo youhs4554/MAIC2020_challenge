@@ -39,7 +39,8 @@ valid_dataset = np.column_stack((x_val, y_val))
 # In[ ]:
 
 
-test_data = np.load("/data/.cache/datasets/MAIC2020/x_test.npz")['arr_0']
+test_data = np.load(
+    "/data/.cache/datasets/MAIC2020/x_test.npz")['arr_0'][:, 4:]
 dummy_test_labels = np.empty((len(test_data,)))
 dummy_test_labels.fill(-1.0)
 test_dataset = np.column_stack((test_data, dummy_test_labels))

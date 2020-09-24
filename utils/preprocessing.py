@@ -3,6 +3,25 @@ import pandas as pd
 import os
 import tqdm
 import torch.utils.data
+from imblearn.under_sampling import *
+
+
+def random_undersampling(X_imb, y_imb):
+
+    # inspect class imbalance
+    print("[before sampling] Class dist. : ",
+          np.unique(y_imb, return_counts=True))
+
+    # random under sampling
+    X_samp, y_samp = RandomUnderSampler(
+        random_state=0).fit_sample(X_imb, y_imb)
+
+    # inspect class imbalance
+    print("[after sampling] Class dist. : ",
+          np.unique(y_samp, return_counts=True))
+
+    return X_samp, y_samp
+
 
 # 2초 moving average
 
@@ -14,6 +33,10 @@ def moving_average(a, n=200):
 
 
 def prepare_data(df, phase="train", save_dir="../data/processed", SRATE=100, MINUTES_AHEAD=5, hot='M'):
+    # to save future data saving
+    future_data_dir = os.path.join(save_dir, "future_data")
+    os.system(f"mkdir -p {future_data_dir}")
+
     # training set 로딩
     x_data = []  # arterial waveform
     y_data = []  # hypotension
@@ -57,20 +80,42 @@ def prepare_data(df, phase="train", save_dir="../data/processed", SRATE=100, MIN
                 i += SRATE  # 1 sec 씩 전진
                 continue
 
+            # Target sequence (60 sec = 60 * 100 Hz = 6000 samples)
+            segy_future = segy
+
             # 출력 변수
             segy = moving_average(segy, 2 * SRATE)  # 2 sec moving avg
             event = 1 if np.nanmax(segy) < 65 else 0
+            signal_id = f"{caseid}_{i//SRATE}"
+            future_save_path = os.path.join(future_data_dir, signal_id)
+
             if event:  # event
+                # nan 을 이전 값으로 채움
+                segx = pd.DataFrame(segx).fillna(
+                    method='ffill', axis=0).fillna(method='bfill', axis=0).values.ravel()
+                segy_future = pd.DataFrame(segy_future).fillna(
+                    method='ffill', axis=0).fillna(method='bfill', axis=0).values.ravel()
+
                 event_idx.append(i)
                 x_data.append(
-                    [age, sex, weight, height] + segx.tolist())
-                y_data.append(event)
+                    [signal_id, age, sex, weight, height] + segx.tolist())
+                # save future signals
+                np.save(future_save_path, segy_future)
+                y_data.append([signal_id, event])
 
             elif np.nanmin(segy) > 65:  # non event
+                # nan 을 이전 값으로 채움
+                segx = pd.DataFrame(segx).fillna(
+                    method='ffill', axis=0).fillna(method='bfill', axis=0).values.ravel()
+                segy_future = pd.DataFrame(segy_future).fillna(
+                    method='ffill', axis=0).fillna(method='bfill', axis=0).values.ravel()
+
                 non_event_idx.append(i)
                 x_data.append(
-                    [age, sex, weight, height] + segx.tolist())
-                y_data.append(event)
+                    [signal_id, age, sex, weight, height] + segx.tolist())
+                # save future signals
+                np.save(future_save_path, segy_future)
+                y_data.append([signal_id, event])
 
             i += 30 * SRATE  # 30sec
 
@@ -79,23 +124,18 @@ def prepare_data(df, phase="train", save_dir="../data/processed", SRATE=100, MIN
             print('{}: {} ({:.1f}%)'.format(
                 caseid, nsamp, len(event_idx) * 100 / nsamp))
 
-    xfile_path = os.path.join(save_dir,  f'x_{phase}.npz')
-    yfile_path = os.path.join(save_dir, f'y_{phase}.npz')
+    xfile_path = os.path.join(save_dir,  f'x_{phase}.pkl')
+    yfile_path = os.path.join(save_dir, f'y_{phase}.pkl')
 
-    x_data = np.array(x_data, dtype=np.float32)
-    y_data = np.array(y_data, dtype=bool)
-
-    print('filling NANs...', flush=True, end='')
-    # nan 을 이전 값으로 채움
-    x_data = pd.DataFrame(x_data).fillna(
-        method='ffill', axis=1).fillna(method='bfill', axis=1).values
-    print('done', flush=True)
+    x_data = pd.DataFrame(x_data, columns=[
+                          "ids", "age", "sex", "weight", "height", *[f"mbp_{t}" for t in range(20*SRATE)]])
+    y_data = pd.DataFrame(y_data, columns=["ids", "class"])
 
     print('saving...\n\n', flush=True, end='')
     print("xfile_path : ", xfile_path)
     print("yfile_path : ", yfile_path)
-    np.savez_compressed(xfile_path, x_data)
-    np.savez_compressed(yfile_path, y_data)
+    x_data.to_pickle(xfile_path)
+    y_data.to_pickle(yfile_path)
     print('done', flush=True)
 
-    return x_data, y_data
+    return x_data.values, y_data.values

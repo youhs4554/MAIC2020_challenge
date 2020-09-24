@@ -11,14 +11,14 @@ import joblib
 if __name__ == "__main__":
     TEST_FILE = "/data/.cache/datasets/MAIC2020/test2_x.csv"
     DATA_ROOT = os.path.join("/data", ".cache", "datasets", "MAIC2020")
-    MODEL_PATH = "./experiments/version-43/epoch=13.pth"
+    MODEL_PATH = "./experiments/version-57/epoch=1.pth"
     VERSION_DIR = os.path.dirname(MODEL_PATH)
 
     # test set 로딩
     if os.path.exists(os.path.join(DATA_ROOT, 'x_test.npz')):
         print('loading test...', flush=True, end='')
         test_data = np.load(os.path.join(DATA_ROOT, 'x_test.npz'))[
-            'arr_0'][:, 4:]
+            'arr_0']
         print('done', flush=True)
     else:
         test_data = pd.read_csv(TEST_FILE)
@@ -59,7 +59,7 @@ if __name__ == "__main__":
     STD = 22.675957
 
     # apply scaling on raw signals
-    test_data = (test_data - MEAN)/STD
+    test_data[:, 4:] = (test_data[:, 4:] - MEAN)/STD
 
     test_ds = TensorDataset(test_data)
     test_dataloader = DataLoader(
@@ -92,7 +92,7 @@ if __name__ == "__main__":
     y_pred = []
     for _ in tqdm.tqdm(range(len(test_dataloader)), desc="Test loop"):
         test_batch = next(test_dataloader)[0]
-        x_test = test_batch.unsqueeze(1)
+        x_test = test_batch[:, 4:].unsqueeze(1)
 
         if torch.cuda.is_available():
             x_test = x_test.cuda()

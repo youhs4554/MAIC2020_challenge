@@ -53,12 +53,10 @@ class NL_Conv1d(nn.Module):
                 nn.ReLU(inplace=True)
             )
 
-        fdim = fdim * 2 if use_ext else fdim
-
         self.bert_pool = BERT5(fdim, 63, hidden=fdim, n_layers=1, attn_heads=8)
 
         # classifier
-        self.classifier = nn.Linear(fdim, 1)
+        self.classifier = nn.Linear(fdim * 2 if use_ext else fdim, 1)
 
     def make_layers(self, layerName, n_blocks=None):
         backbone_layer = getattr(self, layerName)
@@ -86,7 +84,7 @@ class NL_Conv1d(nn.Module):
         return nn.Sequential(*layers)
 
     def _forward(self, *inputs, extraction):
-        if len(inputs) == 2:
+        if len(inputs) == 2 and self.use_ext:
             x, ext = inputs
         else:
             x, = inputs

@@ -62,18 +62,15 @@ if __name__ == "__main__":
     if torch.cuda.is_available():
         model.cuda()
 
-    # optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-    optimizer = torch.optim.SGD(
-        model.parameters(), lr=1e-1, momentum=0.95, weight_decay=1e-3)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    # optimizer = torch.optim.SGD(
+    #     model.parameters(), lr=1e-2, momentum=0.95, weight_decay=1e-3)
     # scheduler = torch.optim.lr_scheduler.StepLR(
     #     optimizer, step_size=math.floor(2/3*N_EPOCHS), gamma=0.1)
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(
-        optimizer, milestones=[math.floor(1/3*N_EPOCHS), math.floor(2/3*N_EPOCHS)], gamma=0.1)
-    warmer = LR_Warmer(optimizer, scheduler=scheduler,
-                       until=5*len(train_dataloader))
-
-    best_score = 0.0
-    best_ep = 1
+    # scheduler = torch.optim.lr_scheduler.MultiStepLR(
+    #     optimizer, milestones=[math.floor(1/3*N_EPOCHS), math.floor(2/3*N_EPOCHS)], gamma=0.1)
+    # warmer = LR_Warmer(optimizer, scheduler=scheduler,
+    #                    until=5*len(train_dataloader))
 
     def extraction_loop(best_model, dataloader):
         print(f"load weights from {best_model}...", flush=True, end='')
@@ -107,6 +104,9 @@ if __name__ == "__main__":
         np.savez_compressed(os.path.join(DATA_ROOT, 'features.npz'), res)
         np.savez_compressed(os.path.join(DATA_ROOT, 'sampled_labels.npz'), gts)
         print('done', flush=True)
+
+    best_score = 0.0
+    best_ep = 1
 
     for ep in range(1, N_EPOCHS+1):
         try:
@@ -146,7 +146,7 @@ if __name__ == "__main__":
                         optimizer.zero_grad()
                         loss.backward()
                         optimizer.step()
-                        warmer.step(epoch=ep)
+                        # warmer.step(epoch=ep)
 
                     running_loss += loss.item()
 

@@ -3,7 +3,7 @@ import torch.utils.data
 import pandas as pd
 import os
 import numpy as np
-from utils.preprocessing import prepare_data
+from utils.preprocessing import prepare_data, random_undersampling
 from sklearn.preprocessing import MinMaxScaler
 import joblib
 
@@ -15,10 +15,10 @@ class MAIC2020(torch.utils.data.Dataset):
     def __init__(self,
                  infile='data/train_cases.csv',
                  SRATE=100, MINUTES_AHEAD=5, VALIDATION_SPLIT=0.2,
-                 transform=None, ext_scaler=None, use_ext=True, train=True):
+                 transform=None, ext_scaler=None, use_ext=False, train=True):
 
         phase = "train" if train else "val"
-        if not os.path.exists(os.path.join(self.save_dir, f"x_{phase}.npz")) or not os.path.exists(os.path.join(self.save_dir, f"y_{phase}.npz")):
+        if not os.path.exists(os.path.join(self.save_dir, f"x_train.pkl")) or not os.path.exists(os.path.join(self.save_dir, f"x_val.pkl")):
             # split train/validation data
             df = pd.read_csv(infile)
 
@@ -38,16 +38,20 @@ class MAIC2020(torch.utils.data.Dataset):
             self.y_true = y_train if train else y_val
 
         else:
-            xfile_path = os.path.join(self.save_dir, f'x_{phase}.npz')
-            yfile_path = os.path.join(self.save_dir, f'y_{phase}.npz')
+            xfile_path = os.path.join(self.save_dir, f'x_{phase}.pkl')
+            yfile_path = os.path.join(self.save_dir, f'y_{phase}.pkl')
 
             print('loading...', flush=True, end='')
-            self.X = np.load(xfile_path)['arr_0']
-            self.y_true = np.load(yfile_path)['arr_0']
+            self.X = pd.read_pickle(xfile_path).values
+            self.y_true = pd.read_pickle(yfile_path).values
             print('done', flush=True)
 
-        # first 4 columns are externals
-        self.ext, self.X = np.split(self.X, [4, ], axis=1)
+        # 0: signal_ids, 1~4: externals, 5~: raw_signals
+        signal_ids, self.ext, self.X = np.split(self.X, [1, 5, ], axis=1)
+
+        self.X = self.X.astype("float")
+        self.ext = self.ext.astype("float")
+        self.signal_ids = signal_ids.ravel()
 
         if use_ext:
             ext_scaler = MinMaxScaler()
@@ -90,6 +94,33 @@ class MAIC2020(torch.utils.data.Dataset):
             return x_sample, y_sample, ext_sample
 
         return x_sample, y_sample
+
+
+class MAIC2020_rec(MAIC2020):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.future_root = os.path.join(self.save_dir, "future_data")
+
+    def __getitem__(self, ix):
+        signal_id = self.signal_ids[ix]
+
+        # load future signal data
+        target_X = np.load(os.path.join(self.future_root, signal_id) + ".npy")
+
+        # current signal
+        current_X = self.X[ix]
+
+        # input : 20 [sec] => 20 * (100 [Hz]) = 2,000 [sample points]
+        current_X = torch.tensor(current_X).view(-1, self.SRATE * 20).float()
+
+        # target : 60 [sec] after 5min
+        target_X = torch.tensor(target_X).view(-1, self.SRATE * 60).float()
+
+        if self.transform is not None:
+            current_X = self.transform(current_X)
+            target_X = self.transform(target_X)
+
+        return current_X, target_X
 
 
 if __name__ == "__main__":
