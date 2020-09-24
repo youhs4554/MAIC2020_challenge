@@ -49,6 +49,8 @@ class MAIC2020(torch.utils.data.Dataset):
         # 0: signal_ids, 1~4: externals, 5~: raw_signals
         signal_ids, self.ext, self.X = np.split(self.X, [1, 5, ], axis=1)
 
+        self.y_true = self.y_true[:, [1]].astype(bool)
+
         self.X = self.X.astype("float")
         self.ext = self.ext.astype("float")
         self.signal_ids = signal_ids.ravel()
