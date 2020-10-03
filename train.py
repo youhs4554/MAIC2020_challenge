@@ -12,11 +12,13 @@ from datasets.maic2020 import MAIC2020
 from utils.metrics import *
 from utils.losses import BCE_with_class_weights
 from utils.lr_scheduler import LR_Warmer
+import torchaudio
+import torchvision.transforms as F
+
 
 if __name__ == "__main__":
-    BATCH_SIZE = 512 * torch.cuda.device_count()
-    VALIDATION_SPLIT = 0.2
-    N_EPOCHS = 30
+    BATCH_SIZE = 4096 * torch.cuda.device_count()
+    N_EPOCHS = 100
 
     # dataset statistics for input data normalization
     MEAN = 85.15754
@@ -28,6 +30,17 @@ if __name__ == "__main__":
     verion_ix = len(os.listdir(EXP_HOME))
     EXP_SUB_DIR = os.path.join(EXP_HOME, "version-{}".format(verion_ix))
     os.system(f"mkdir -p {EXP_SUB_DIR}")
+
+    specgram_transform = F.Compose([
+        torchaudio.transforms.Spectrogram(),
+        torch.log2,
+        F.Lambda(lambda x: ((x-x.min())/(x.max()-x.min())).float()),
+        F.ToPILImage(),
+        F.Grayscale(3),
+        # F.Resize((224, 244)),
+        F.ToTensor(),
+        F.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    ])
 
     # Prepare Dataset
     train_ds = MAIC2020(infile="/data/.cache/datasets/MAIC2020/train_cases.csv", SRATE=100, MINUTES_AHEAD=5,
@@ -46,64 +59,43 @@ if __name__ == "__main__":
     # # 6-layers 1d-CNNs
     # model = BasicConv1d(dims=[1, 64, 64, 64, 64, 64, 64])
 
-    import models.resnet1d
-    from models.non_local.nl_conv1d import NL_Conv1d
-    backbone = models.resnet1d.resnet18()
-    model = NL_Conv1d(backbone=backbone, squad="0,2,2,0", use_ext=False)
+    # import models.resnet1d
+    # from models.non_local.nl_conv1d import NL_Conv1d
+    # backbone = models.resnet1d.resnet50()
+    # model = NL_Conv1d(backbone=backbone, squad="0,2,3,0", use_ext=False)
 
-    # from models.shufflenet import shufflenet_v2
-    # model = shufflenet_v2()
+    # from torchvision.models import resnet101
+    # model = resnet101(pretrained=True)
+    # in_features = model.fc.in_features
+    # model.fc = nn.Linear(in_features, 1)
+
+    from models.shufflenet import shufflenet_v2
+    model = shufflenet_v2()
+
     if torch.cuda.device_count() > 1:
         model = nn.DataParallel(model)
 
-    # crit = BCE_with_class_weights(class_weights={0: 1, 1: 1})
     crit = nn.BCELoss()
+    # Todo. FocalLoss!
 
     if torch.cuda.is_available():
         model.cuda()
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-    # optimizer = torch.optim.SGD(
-    #     model.parameters(), lr=1e-2, momentum=0.95, weight_decay=1e-3)
+    # optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = torch.optim.SGD(
+        model.parameters(), lr=0.1, momentum=0.95,
+        weight_decay=1e-3
+    )
     # scheduler = torch.optim.lr_scheduler.StepLR(
     #     optimizer, step_size=math.floor(2/3*N_EPOCHS), gamma=0.1)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=len(train_dataloader) * N_EPOCHS,
+    )
     # scheduler = torch.optim.lr_scheduler.MultiStepLR(
     #     optimizer, milestones=[math.floor(1/3*N_EPOCHS), math.floor(2/3*N_EPOCHS)], gamma=0.1)
-    # warmer = LR_Warmer(optimizer, scheduler=scheduler,
-    #                    until=5*len(train_dataloader))
-
-    def extraction_loop(best_model, dataloader):
-        print(f"load weights from {best_model}...", flush=True, end='')
-        model.load_state_dict(torch.load(best_model))
-        model.eval()
-        print('done', flush=True)
-
-        # disable gradients to save memory during validation phase
-        torch.set_grad_enabled(False)
-
-        dataloader = iter(dataloader)
-
-        res = []  # resulting features
-        gts = []  # corresponding gt-labels
-        for _ in tqdm.tqdm(range(len(dataloader)), desc=f"Feature Extraction Loop"):
-            x, label = next(dataloader)
-
-            if torch.cuda.is_available():
-                x = x.cuda()
-                label = label.cuda()
-
-            features = model(x, extraction=True)  # (bs, fdim)
-            features_arr = features.detach().cpu().numpy()
-            res.append(features_arr)
-            gts += label.flatten().detach().cpu().numpy().tolist()
-
-        res = np.row_stack(res)
-        gts = np.row_stack(gts)
-
-        print('saving...', flush=True, end='')
-        np.savez_compressed(os.path.join(DATA_ROOT, 'features.npz'), res)
-        np.savez_compressed(os.path.join(DATA_ROOT, 'sampled_labels.npz'), gts)
-        print('done', flush=True)
+    warmer = LR_Warmer(optimizer, scheduler=scheduler,
+                       until=10*len(train_dataloader))
 
     best_score = 0.0
     best_ep = 1
@@ -135,7 +127,13 @@ if __name__ == "__main__":
                         x = x.cuda()
                         label = label.cuda()
 
-                    out = model(x, extraction=False)
+                    # (b,1,2000) -> (b,20,100)
+                    # opt1 > each vector : consecutive 20 samples
+                    # x = x.view(-1, 100, 20).transpose(1, 2)
+
+                    # opt2 > each K vector : 20 samples separated by 100 samples
+                    # x = x.view(-1, 20, 100)
+                    out = model(x)
                     loss = crit(out, label)
 
                     y_score += out.flatten().detach().cpu().numpy().tolist()
@@ -146,7 +144,7 @@ if __name__ == "__main__":
                         optimizer.zero_grad()
                         loss.backward()
                         optimizer.step()
-                        # warmer.step(epoch=ep)
+                        warmer.step()
 
                     running_loss += loss.item()
 
@@ -175,6 +173,3 @@ if __name__ == "__main__":
                     torch.save(model.state_dict(), model_path)
         except KeyboardInterrupt:
             break
-
-    # feature extraction for training datasets
-    extraction_loop(best_model=model_path, dataloader=train_dataloader)

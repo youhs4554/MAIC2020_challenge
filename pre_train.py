@@ -84,10 +84,10 @@ if __name__ == "__main__":
                     tgt_shift = F.pad(tgt, (1, 0), value=0.0)[..., :-1]
 
                     # each vector represents samples for 1 sec
-                    src = src.permute(2, 0, 1).reshape(20, -1, 100)  # (S,N,E)
-                    tgt = tgt.permute(2, 0, 1).reshape(60, -1, 100)  # (T,N,E)
-                    tgt_shift = tgt_shift.permute(
-                        2, 0, 1).reshape(60, -1, 100)  # (T,N,E)
+                    src = src.view(-1, 20, 100).transpose(0, 1)  # (S,N,E)
+                    tgt = tgt.view(-1, 60, 100).transpose(0, 1)  # (T,N,E)
+                    # (T,N,E)
+                    tgt_shift = tgt_shift.view(-1, 60, 100).transpose(0, 1)
 
                     # => (T,N,E)
                     out = model(src, tgt_shift)

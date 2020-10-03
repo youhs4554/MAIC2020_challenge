@@ -53,7 +53,7 @@ class NL_Conv1d(nn.Module):
                 nn.ReLU(inplace=True)
             )
 
-        self.bert_pool = BERT5(fdim, 63, hidden=fdim, n_layers=1, attn_heads=8)
+        # self.bert_pool = BERT5(fdim, 4, hidden=fdim, n_layers=1, attn_heads=8)
 
         # classifier
         self.classifier = nn.Linear(fdim * 2 if use_ext else fdim, 1)
@@ -95,11 +95,16 @@ class NL_Conv1d(nn.Module):
         x = self.block_c(x)
         x = self.block_d(x)
 
-        # N,C,D -> N,D,C
-        x = x.transpose(1, 2)
+        # """
+        #     Bert pooling
+        # """
+        # # N,C,D -> N,D,C
+        # x = x.transpose(1, 2)
 
-        bert_outputs, _ = self.bert_pool(x)
-        x = bert_outputs[:, 0, :]
+        # bert_outputs, _ = self.bert_pool(x)
+        # x = bert_outputs[:, 0, :]
+
+        x = F.adaptive_avg_pool1d(x, 1).flatten(1)
 
         if self.use_ext:
             # embedding of external data

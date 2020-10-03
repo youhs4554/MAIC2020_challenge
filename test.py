@@ -11,7 +11,7 @@ import joblib
 if __name__ == "__main__":
     TEST_FILE = "/data/.cache/datasets/MAIC2020/test2_x.csv"
     DATA_ROOT = os.path.join("/data", ".cache", "datasets", "MAIC2020")
-    MODEL_PATH = "./experiments/version-57/epoch=1.pth"
+    MODEL_PATH = "./experiments/version-30/epoch=21.pth"
     VERSION_DIR = os.path.dirname(MODEL_PATH)
 
     # test set 로딩
@@ -51,7 +51,7 @@ if __name__ == "__main__":
         np.savez_compressed(os.path.join(DATA_ROOT, 'x_test.npz'), test_data)
         print('done', flush=True)
 
-    BATCH_SIZE = 512 * torch.cuda.device_count()
+    BATCH_SIZE = 4096 * torch.cuda.device_count()
     test_data = torch.from_numpy(test_data).float()
 
     # dataset statistics for input data normalization
@@ -70,13 +70,13 @@ if __name__ == "__main__":
     # 6-layers 1d-CNNs
     # model = BasicConv1d(dims=[1, 64, 64, 64, 64, 64, 64])
 
-    import models.resnet1d
-    from models.non_local.nl_conv1d import NL_Conv1d
-    backbone = models.resnet1d.resnet18()
-    model = NL_Conv1d(backbone=backbone, squad="0,2,2,0", use_ext=False)
+    # import models.resnet1d
+    # from models.non_local.nl_conv1d import NL_Conv1d
+    # backbone = models.resnet1d.resnet50()
+    # model = NL_Conv1d(backbone=backbone, squad="0,2,3,0", use_ext=False)
 
-    # from models.shufflenet import shufflenet_v2
-    # model = shufflenet_v2()
+    from models.shufflenet import shufflenet_v2
+    model = shufflenet_v2()
 
     if torch.cuda.device_count() > 1:
         model = nn.DataParallel(model)
@@ -97,8 +97,15 @@ if __name__ == "__main__":
         if torch.cuda.is_available():
             x_test = x_test.cuda()
 
+        # (b,1,2000) -> (b,20,100)
+        # opt1 > each vector : consecutive 20 samples
+        # x_test = x_test.view(-1, 100, 20).transpose(1, 2)
+
+        # opt2 > each K vector : 20 samples separated by 100 samples
+        # x_test = x_test.view(-1, 20, 100)
+
         with torch.no_grad():
-            out = model(x_test, extraction=False)
+            out = model(x_test)
         y_pred += out.flatten().detach().cpu().numpy().tolist()
 
     np.savetxt(os.path.join(VERSION_DIR, "pred_y.txt"), np.array(y_pred))
