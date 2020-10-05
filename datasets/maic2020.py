@@ -15,7 +15,10 @@ class MAIC2020(torch.utils.data.Dataset):
     def __init__(self,
                  infile='data/train_cases.csv',
                  SRATE=100, MINUTES_AHEAD=5, VALIDATION_SPLIT=0.2,
-                 transform=None, ext_scaler=None, use_ext=False, train=True):
+                 transform=None, ext_scaler=None, use_ext=False, train=True, composition=True):
+
+        # provide composition of target for reconstruction and classification task
+        self.composition = composition
 
         phase = "train" if train else "val"
         if not os.path.exists(os.path.join(self.save_dir, f"x_train.pkl")) or not os.path.exists(os.path.join(self.save_dir, f"x_val.pkl")):
@@ -121,8 +124,13 @@ class MAIC2020_rec(MAIC2020):
         if self.transform is not None:
             current_X = self.transform(current_X)
             target_X = self.transform(target_X)
-
-        return current_X, target_X
+        if self.composition:
+            # provide classification target along with rec. targets
+            y_sample = self.y_true[ix]
+            y_sample = torch.tensor(y_sample).float()
+            return current_X, target_X, y_sample
+        else:
+            return current_X, target_X
 
 
 if __name__ == "__main__":

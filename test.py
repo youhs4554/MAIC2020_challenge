@@ -11,7 +11,7 @@ import joblib
 if __name__ == "__main__":
     TEST_FILE = "/data/.cache/datasets/MAIC2020/test2_x.csv"
     DATA_ROOT = os.path.join("/data", ".cache", "datasets", "MAIC2020")
-    MODEL_PATH = "./experiments/version-30/epoch=21.pth"
+    MODEL_PATH = "./experiments_pretrain/version-48/epoch=7.pth"
     VERSION_DIR = os.path.dirname(MODEL_PATH)
 
     # test set 로딩
@@ -51,12 +51,12 @@ if __name__ == "__main__":
         np.savez_compressed(os.path.join(DATA_ROOT, 'x_test.npz'), test_data)
         print('done', flush=True)
 
-    BATCH_SIZE = 4096 * torch.cuda.device_count()
+    BATCH_SIZE = 512 * torch.cuda.device_count()
     test_data = torch.from_numpy(test_data).float()
 
     # dataset statistics for input data normalization
-    MEAN = 85.15754
-    STD = 22.675957
+    MEAN = 65.0
+    STD = 65.0
 
     # apply scaling on raw signals
     test_data[:, 4:] = (test_data[:, 4:] - MEAN)/STD
@@ -75,8 +75,12 @@ if __name__ == "__main__":
     # backbone = models.resnet1d.resnet50()
     # model = NL_Conv1d(backbone=backbone, squad="0,2,3,0", use_ext=False)
 
-    from models.shufflenet import shufflenet_v2
-    model = shufflenet_v2()
+    # from models.shufflenet import shufflenet_v2
+    # model = shufflenet_v2()
+
+    from models.transformers.transformers import TransformerModel_MTL
+    model = TransformerModel_MTL(
+        n_cls=2, d_model=512, nhead=8, num_encoder_layers=6)
 
     if torch.cuda.device_count() > 1:
         model = nn.DataParallel(model)

@@ -21,8 +21,8 @@ if __name__ == "__main__":
     N_EPOCHS = 100
 
     # dataset statistics for input data normalization
-    MEAN = 85.15754
-    STD = 22.675957
+    MEAN = 65.0
+    STD = 65.0
 
     EXP_HOME = "./experiments"
     DATA_ROOT = os.path.join("/data", ".cache", "datasets", "MAIC2020")

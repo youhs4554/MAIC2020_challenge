@@ -4,6 +4,69 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+class TransformerModel_MTL(nn.Module):
+    def __init__(self, n_cls, *args, **kwargs):
+        super().__init__()
+        if n_cls == 2:
+            n_cls = 1  # sigmoid -> bce on single node
+
+        transformer = nn.Transformer(*args, **kwargs)
+
+        d_model = transformer.d_model
+        self.embedding = nn.Linear(100, d_model, bias=False)
+        self.encoder = transformer.encoder
+        self.decoder = transformer.decoder
+        self.dense = nn.Linear(d_model, 100)
+        self.logits = nn.Linear(d_model, n_cls)
+        self.d_model = d_model
+        self._init_params()
+
+    def _init_params(self):
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+
+    def _EncodeInputsAndGetLogits(self, src):
+        # zero-pad at the end of src
+        src = F.pad(src, (0, 100), value=0.0)
+
+        # each vector represents samples for 1 sec
+        src = src.view(-1, 21, 100).transpose(0, 1)  # (S+1,N,E)
+        src = self.embedding(src)
+
+        encoder_out = self.encoder(src)
+
+        # last encoder output -> classification token
+        memory, cls_token = torch.split(
+            encoder_out, (len(encoder_out)-1, 1), dim=0)
+
+        cls_token = cls_token.view(-1, self.d_model)
+
+        # classification task
+        logits_out = self.logits(cls_token)
+        logits_out = torch.sigmoid(logits_out)
+
+        return memory, logits_out
+
+    def forward(self, src, tgt=None):
+        memory, logits_out = self._EncodeInputsAndGetLogits(src)
+
+        if tgt is None:
+            return logits_out
+
+        # decoder inputs
+        tgt = tgt.view(-1, 60,
+                       100).transpose(0, 1)  # (T,N,E)
+        tgt = self.embedding(tgt)
+
+        # reconstruction task
+        decoder_out = self.decoder(tgt, memory)
+        decoder_out = self.dense(decoder_out)
+        decoder_out = decoder_out.transpose(0, 1)  # major-axis -> batch
+
+        return logits_out, decoder_out
+
+
 class TransformerModel(nn.Module):
 
     def __init__(self, nout, ninp, nhead, nhid, nlayers, dropout=0.5):
