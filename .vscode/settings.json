@@ -1,3 +1,4 @@
 {
-    "python.pythonPath": "/opt/conda/envs/torch/bin/python"
+    "python.pythonPath": "/opt/conda/envs/torch/bin/python",
+    "python.analysis.cachingLevel": "Library"
 }

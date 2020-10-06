@@ -9,23 +9,23 @@ from tools.models.BERT.bert import BERT5
 
 
 class NL_Conv1d(nn.Module):
-    def __init__(self, backbone, squad, use_ext=False):
+    def __init__(self, resnet, squad, use_ext=False):
         super().__init__()
 
         self.use_ext = use_ext
 
-        fdim = backbone.fc.in_features
+        fdim = resnet.fc.in_features
         hidden_dim = fdim // 4
 
-        del backbone.avgpool
-        del backbone.fc
+        del resnet.avgpool
+        del resnet.fc
 
         self.stem = nn.Sequential(
-            backbone.conv1, backbone.bn1, backbone.relu, backbone.maxpool)
-        self.layer1 = backbone.layer1
-        self.layer2 = backbone.layer2
-        self.layer3 = backbone.layer3
-        self.layer4 = backbone.layer4
+            resnet.conv1, resnet.bn1, resnet.relu, resnet.maxpool)
+        self.layer1 = resnet.layer1
+        self.layer2 = resnet.layer2
+        self.layer3 = resnet.layer3
+        self.layer4 = resnet.layer4
 
         layerNames = ["layer{}".format(i) for i in range(1, 4+1)]
 
@@ -59,22 +59,22 @@ class NL_Conv1d(nn.Module):
         self.classifier = nn.Linear(fdim * 2 if use_ext else fdim, 1)
 
     def make_layers(self, layerName, n_blocks=None):
-        backbone_layer = getattr(self, layerName)
+        resnet_layer = getattr(self, layerName)
         if n_blocks is None:
             # if n_blocks is not given, any blocks are not included
             n_blocks = 0
 
-        NL_idx = range(len(backbone_layer))[
+        NL_idx = range(len(resnet_layer))[
             1::2][:n_blocks]  # default : offset=1, step=2
 
-        if n_blocks > math.ceil(len(backbone_layer) / 2):
-            NL_idx = range(len(backbone_layer))[:n_blocks]  # offset=0, step=1
+        if n_blocks > math.ceil(len(resnet_layer) / 2):
+            NL_idx = range(len(resnet_layer))[:n_blocks]  # offset=0, step=1
         print(layerName, list(NL_idx))
         layers = nn.ModuleList()
         in_channels = self.netConfig[eval(layerName.split("layer")[-1])]
 
-        for i in range(len(backbone_layer)):
-            blck = backbone_layer[i]
+        for i in range(len(resnet_layer)):
+            blck = resnet_layer[i]
             layers.append(blck)
             if i in NL_idx:
                 # if i is included in NL_idx, attach NL-Block
@@ -83,7 +83,7 @@ class NL_Conv1d(nn.Module):
 
         return nn.Sequential(*layers)
 
-    def _forward(self, *inputs, extraction):
+    def _forward(self, *inputs):
         if len(inputs) == 2 and self.use_ext:
             x, ext = inputs
         else:
@@ -111,9 +111,6 @@ class NL_Conv1d(nn.Module):
             ext_emb = self.embedding(ext)
 
             x = torch.cat((x, ext_emb), dim=1)
-
-        if extraction:
-            return x
 
         x = self.classifier(x)
         x = torch.sigmoid(x)  # sigmoid output

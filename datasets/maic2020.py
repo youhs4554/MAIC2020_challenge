@@ -13,7 +13,6 @@ class MAIC2020(torch.utils.data.Dataset):
     os.system("mkdir -p {}".format(save_dir))
 
     def __init__(self,
-                 infile='data/train_cases.csv',
                  SRATE=100, MINUTES_AHEAD=5, VALIDATION_SPLIT=0.2,
                  transform=None, ext_scaler=None, use_ext=False, train=True, composition=True):
 
@@ -23,7 +22,7 @@ class MAIC2020(torch.utils.data.Dataset):
         phase = "train" if train else "val"
         if not os.path.exists(os.path.join(self.save_dir, f"x_train.pkl")) or not os.path.exists(os.path.join(self.save_dir, f"x_val.pkl")):
             # split train/validation data
-            df = pd.read_csv(infile)
+            df = pd.read_csv(os.path.join(self.save_dir, "train_cases.csv"))
 
             # random state is a seed value
             train_df = df.sample(frac=1-VALIDATION_SPLIT, random_state=200)
@@ -96,7 +95,7 @@ class MAIC2020(torch.utils.data.Dataset):
             x_sample = self.transform(x_sample)
 
         if self.use_ext:
-            return x_sample, y_sample, ext_sample
+            return x_sample, ext_sample, y_sample
 
         return x_sample, y_sample
 
@@ -133,5 +132,52 @@ class MAIC2020_rec(MAIC2020):
             return current_X, target_X
 
 
-if __name__ == "__main__":
-    pass
+def prepare_test_dataset(data_root, transform=None, use_ext=False):
+    # test set 로딩
+    if os.path.exists(os.path.join(data_root, 'x_test.npz')):
+        print('loading test...', flush=True, end='')
+        test_data = np.load(os.path.join(data_root, 'x_test.npz'))[
+            'arr_0']
+        print('done', flush=True)
+    else:
+        test_data = pd.read_csv(os.path.join(data_root, "test2_x.csv"))
+
+        # one-hot encoding for categorical column
+        test_data.sex = test_data.sex.map({"M": 1.0, "F": 0.0})
+        test_data = test_data.values
+
+        # first 4 columns are externals
+        ext, segx = np.split(test_data, [4, ], axis=1)
+        ext_scaler = joblib.load("scaler.gz")
+
+        # crazy way! exclude a categorical column(i.e. sex)
+        ext_to_scale = ext[:, [0, 2, 3]]
+        # sclaing external data
+        ext_to_scale = ext_scaler.transform(ext_to_scale)
+
+        # synthesizes columns: [age, sex, weight, height]
+        ext = np.insert(ext_to_scale, 1, ext[:, 1], axis=1)
+        # replace first 4 columns with scaled ones
+        test_data = np.column_stack((ext, segx))
+
+        print('filling NANs...', flush=True, end='')
+        # nan 을 이전 값으로 채움
+        test_data = pd.DataFrame(test_data).fillna(
+            method='ffill', axis=1).fillna(method='bfill', axis=1).values
+        print('done', flush=True)
+
+        print('saving...', flush=True, end='')
+        np.savez_compressed(os.path.join(
+            data_root, 'x_test.npz'), test_data)
+        print('done', flush=True)
+
+    test_data = torch.from_numpy(test_data).float()
+    if not use_ext:
+        test_data = test_data[:, 4:]
+        if transform is not None:
+            test_data = transform(test_data)
+    else:
+        if transform is not None:
+            test_data[:, 4:] = transform(test_data[:, 4:])
+
+    return torch.utils.data.TensorDataset(test_data)

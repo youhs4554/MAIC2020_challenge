@@ -62,8 +62,6 @@ class TransformerModel_MTL(nn.Module):
         # reconstruction task
         decoder_out = self.decoder(tgt, memory)
         decoder_out = self.dense(decoder_out)
-        decoder_out = decoder_out.transpose(0, 1)  # major-axis -> batch
-
         return logits_out, decoder_out
 
 
@@ -106,6 +104,8 @@ class TransformerModel(nn.Module):
         output = self.transformer_encoder(src, self.src_mask)
         output = output.view(-1, 2000)
         output = self.decoder(output)
+        output = torch.sigmoid(output)
+
         return output
 
 

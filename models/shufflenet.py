@@ -121,9 +121,6 @@ class ShuffleNetV2(nn.Module):
         self._initialize_weights()
 
     def forward(self, x):
-        # reshape 1d -> 2d
-        x = x.view(x.size(0), 1, 40, 50)
-
         x = self.first_conv(x)
         x = self.maxpool(x)
         x = self.features(x)
