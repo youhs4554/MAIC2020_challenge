@@ -312,29 +312,6 @@ if __name__ == "__main__":
     test_ds = prepare_test_dataset(
         args.data_root, transform=transform, use_ext=args.use_ext)
 
-    # class _dummyDS(torch.utils.data.Dataset):
-    #     def __init__(self, arch, train=False):
-    #         if train:
-    #             N = 10000
-    #         else:
-    #             N = 2000
-    #         self.x_seg = torch.randn(N, 1, 2000)
-    #         self.y_seg = torch.randn(N, 1, 6000)
-    #         self.label = torch.randint(low=0, high=2, size=(N, 1))
-    #         self.arch = arch
-
-    #     def __len__(self):
-    #         return len(self.x_seg)
-
-    #     def __getitem__(self, ix):
-    #         if self.arch.endswith("mtl"):
-    #             return self.x_seg[ix], self.y_seg[ix], self.label[ix]
-    #         else:
-    #             return self.x_seg[ix], self.label[ix]
-
-    # train_ds = _dummyDS(arch=args.arch, train=True)
-    # val_ds = _dummyDS(arch=args.arch, train=False)
-
     print('\033[1m' + '\033[93m' + f"Train: {len(train_ds)}")
     print('\033[1m' + '\033[96m' + f"Validation: {len(val_ds)}" + '\033[0m')
 
