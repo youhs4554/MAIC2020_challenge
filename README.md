@@ -38,27 +38,40 @@ conda env create -f environment.yml
 conda activate torch
 ```
 
-For trainig the model
+Trainig + Testing with `main.py`. Save resulting file for submission after training.
 
 ```
-CUDA_VISIBLE_DEVICES=0 python train.py --...
-```
+# conv1d_lenet (simplest model)
+CUDA_VISIBLE_DEVICES=0 python main.py --cfg cfg/conv1d_lenet.yaml
 
-For testing the model
+# conv1d_r34_nl4
+CUDA_VISIBLE_DEVICES=0 python main.py --cfg cfg/conv1d_r34_nl4.yaml
 
-```
-CUDA_VISIBLE_DEVICES=0 python test.py --...
+# conv1d_r50_nl5
+CUDA_VISIBLE_DEVICES=0 python main.py --cfg cfg/conv1d_r50_nl5.yaml
+
+# shufflenet_v2
+CUDA_VISIBLE_DEVICES=0 python main.py --cfg cfg/shufflenet_v2.yaml
+
+# transformer_basic
+CUDA_VISIBLE_DEVICES=0 python main.py --cfg cfg/transformer_basic.yaml
+
+# transformer_mtl(MTL: Multi-Task Learning)
+CUDA_VISIBLE_DEVICES=0 python main.py --cfg cfg/transformer_mtl.yaml
 ```
 
 ## TODO
 
-- [ ] pytorch-lightning
-- [ ] integrate patients info
-- [ ] add unsupervised methods
-  - two-steps of training
+- [x] pytorch-lightning
+- [x] ~~integrate patients info (but not successful)~~
+- [x] introduce a reconstruction as pretraining task
+  - [ ] two-stage way
     1. train reconstruction model to predict the signal after 5 minutes.
     2. replace decoder of the trained model with classifier from to predict corresponding class.
-- [ ] simplify env file
+  - [x] MTL way : linear combination of reconstruction & classification
+- [x] focal loss: to remedy class imbalance
+- [ ] early stopping
+- [ ] lightweight env file
 
 ## Supporting Team
 

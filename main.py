@@ -142,7 +142,7 @@ class LitModel(pl.LightningModule):
         # init tensorboard logger at the beginning of fit()
         self.tb = self.logger.experiment
         if self.hparams.focal_loss and not self.trainer.testing:
-            print('\033[1m' + '\033[91m' + 'Focal Loss : ENABLED' + '\033[0m')
+            print('\033[1m' + '\033[92m' + 'Focal Loss : ENABLED' + '\033[0m')
 
     def training_step(self, batch, batch_nb):
         loss, label, logits_out = self.step(batch)
@@ -281,9 +281,6 @@ def parse_args(parser):
 if __name__ == "__main__":
     # fix seed for reproductivity
     torch.manual_seed(0)
-    # # TODO.
-    # parser.add_argument("--ensemble_infer", action="store_true",
-    #                     help="ensemble top-k model results at inference stage(i.e. test)")
 
     args = parse_args(create_parser())
 
@@ -348,7 +345,7 @@ if __name__ == "__main__":
         STEP 4 : test and save a result file to submit
     """
     if args.ensemble_infer:
-        print('\033[1m' + '\033[91m' + '\033[4m' +
+        print('\033[1m' + '\033[92m' + '\033[4m' +
               'Ensemble Infer : ENABLED' + '\033[0m')
 
         ckpt_dir = os.path.join(args.logdir, tb_logger.name,
@@ -368,6 +365,8 @@ if __name__ == "__main__":
     # save scores as .txt file
     exp_dir = os.path.join(args.logdir, tb_logger.name,
                            f"version_{tb_logger.version}")
-    np.savetxt(os.path.join(exp_dir, "pred_y.txt"), results)
 
-    print('\x1b[6;30;42m' + 'Done!' + '\x1b[0m' + '\033[0m')
+    print('\x1b[6;30;42m' +
+          f"saving resulting file at {exp_dir}/pred_y.txt..." + '\x1b[0m', flush=True, end="")
+    np.savetxt(os.path.join(exp_dir, "pred_y.txt"), results)
+    print('\x1b[6;30;42m' + "Done!" + '\033[0m', flush=True, end="")
