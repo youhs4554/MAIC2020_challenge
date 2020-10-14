@@ -21,12 +21,12 @@ from models.transformers.transformers import TransformerModel_MTL, transformers
 from datasets.maic2020 import MAIC2020, MAIC2020_rec, prepare_test_dataset
 from utils.metrics import *
 from utils.losses import WeightedFocalLoss
-import torchaudio
 import torch.nn.functional as F
 import argparse
 import pytorch_lightning as pl
 from pytorch_lightning import loggers as pl_loggers
 from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
 
 def _build_model(arch):
@@ -74,7 +74,6 @@ class LitModel(pl.LightningModule):
 
             else:
                 x_seg, y_seg = inputs
-
                 # right-shifted target
                 y_seg_shift = F.pad(y_seg, (1, 0), value=0.0)[..., :-1]
 
@@ -158,7 +157,7 @@ class LitModel(pl.LightningModule):
         avg_loss = torch.stack([o["loss"] for o in outputs]).mean()
         auprc, auc = self.get_scores(outputs)
 
-        log_dict = {"train_auprc": auprc.item(), "train_auc": auc.item()}
+        log_dict = {"train_auprc": auprc, "train_auc": auc}
 
         self.tb.add_scalar("train_auprc", auprc.item(),
                            self.trainer.global_step)
@@ -238,7 +237,7 @@ class LitModel(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.SGD(
-            self.pytorch_model.parameters(), lr=0.1, momentum=0.95, weight_decay=1e-3
+            self.pytorch_model.parameters(), lr=self.hparams.lr, momentum=0.95
         )
 
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -335,10 +334,19 @@ if __name__ == "__main__":
                      f"version_{tb_logger.version}", "checkpoints", "{epoch}-{val_auprc:.4f}"),
         save_top_k=args.save_top_k, monitor="val_auprc", mode='max')
 
+    early_stop_callback = EarlyStopping(
+        monitor='val_auprc',
+        patience=10,
+        verbose=True,
+        mode='max'
+    )
+
     trainer = pl.Trainer(
         logger=tb_logger,
+        early_stop_callback=early_stop_callback,
         checkpoint_callback=checkpoint_callback,
-        num_sanity_val_steps=0, gpus=torch.cuda.device_count(), distributed_backend='dp')
+        num_sanity_val_steps=0, gpus=torch.cuda.device_count(), distributed_backend='dp',
+        max_epochs=args.n_epochs)
     trainer.fit(model, train_dataloader, val_dataloader)
 
     """
@@ -369,4 +377,4 @@ if __name__ == "__main__":
     print('\x1b[6;30;42m' +
           f"saving resulting file at {exp_dir}/pred_y.txt..." + '\x1b[0m', flush=True, end="")
     np.savetxt(os.path.join(exp_dir, "pred_y.txt"), results)
-    print('\x1b[6;30;42m' + "Done!" + '\033[0m', flush=True, end="")
+    print('\x1b[6;30;42m' + "Done!" + '\033[0m', flush=True, end="\n")

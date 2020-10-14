@@ -70,7 +70,7 @@ CUDA_VISIBLE_DEVICES=0 python main.py --cfg cfg/transformer_mtl.yaml
     2. replace decoder of the trained model with classifier from to predict corresponding class.
   - [x] MTL way : linear combination of reconstruction & classification
 - [x] focal loss: to remedy class imbalance
-- [ ] early stopping
+- [x] early stopping
 - [ ] lightweight env file
 
 ## Supporting Team

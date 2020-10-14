@@ -28,7 +28,7 @@ class TransformerModel_MTL(nn.Module):
 
     def _EncodeInputsAndGetLogits(self, src):
         # zero-pad at the end of src
-        src = F.pad(src, (0, 100), value=0.0)
+        src = F.pad(src, (0, 0, 0, 1), value=0.0)
 
         # each vector represents samples for 1 sec
         src = src.view(-1, 21, 100).transpose(0, 1)  # (S+1,N,E)
