@@ -51,7 +51,6 @@ class ShuffleV2Block(nn.Module):
         elif self.stride == 2:
             x_proj = old_x
             x = old_x
-            #import ipdb; ipdb.set_trace()
             return torch.cat((self.branch_proj(x_proj), self.branch_main(x)), 1)
 
     def channel_shuffle(self, x):
@@ -130,7 +129,6 @@ class ShuffleNetV2(nn.Module):
         x = self.dropout(x)
         x = x.view(x.size(0), -1)
         x = self.fc(x)
-        x = torch.sigmoid(x)
 
         return x
 

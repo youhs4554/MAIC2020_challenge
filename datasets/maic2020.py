@@ -3,9 +3,12 @@ import torch.utils.data
 import pandas as pd
 import os
 import numpy as np
-from utils.preprocessing import prepare_data, random_undersampling
+from utils.preprocessing import prepare_data, random_undersampling, raw_signals_to_image_arr
 from sklearn.preprocessing import MinMaxScaler
 import joblib
+import cv2
+from PIL import Image
+import torchvision.transforms as TF
 
 
 class MAIC2020(torch.utils.data.Dataset):
@@ -132,7 +135,52 @@ class MAIC2020_rec(MAIC2020):
             return current_X, target_X
 
 
-def prepare_test_dataset(data_root, transform=None, use_ext=False):
+class MAIC2020_image(MAIC2020):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def __getitem__(self, ix):
+        # current signal
+        x_sample = raw_signals_to_image_arr(inputs=self.X[ix])
+        x_sample = torch.tensor(x_sample).byte()  # uint8
+
+        # ndarr -> PIL
+        x_sample = TF.ToPILImage()(x_sample.permute(2, 0, 1))
+
+        y_sample = self.y_true[ix]
+        y_sample = torch.tensor(y_sample).float()
+
+        if self.transform is not None:
+            x_sample = self.transform(x_sample)
+        else:
+            x_sample = TF.ToTensor(x_sample)
+
+        return x_sample, y_sample
+
+
+class CustomTensorDataset(torch.utils.data.Dataset):
+    def __init__(self, tensors, transform=None):
+        assert len(tensors) > 0, "number of tensors is zero"
+        self.tensors = tensors
+        self.transform = transform
+
+    def __getitem__(self, index):
+        # input to image transformation should be pil image
+        x = raw_signals_to_image_arr(inputs=self.tensors[index])
+        x = TF.ToPILImage()(x)
+
+        if self.transform is not None:
+            x = self.transform(x)
+        else:
+            x = TF.ToTensor()(x)
+
+        return x
+
+    def __len__(self):
+        return len(self.tensors)
+
+
+def prepare_test_dataset(data_root, transform=None, use_ext=False, use_image=False):
     # test set 로딩
     if os.path.exists(os.path.join(data_root, 'x_test.npz')):
         print('loading test...', flush=True, end='')
@@ -172,12 +220,16 @@ def prepare_test_dataset(data_root, transform=None, use_ext=False):
         print('done', flush=True)
 
     test_data = torch.from_numpy(test_data).float()
-    if not use_ext:
-        test_data = test_data[:, 4:]
-        if transform is not None:
-            test_data = transform(test_data)
-    else:
-        if transform is not None:
-            test_data[:, 4:] = transform(test_data[:, 4:])
 
-    return torch.utils.data.TensorDataset(test_data)
+    if use_image:
+        return CustomTensorDataset(tensors=test_data[:, 4:], transform=transform)
+    else:
+        if not use_ext:
+            test_data = test_data[:, 4:]
+            if transform is not None:
+                test_data = transform(test_data)
+        else:
+            if transform is not None:
+                test_data[:, 4:] = transform(test_data[:, 4:])
+
+        return torch.utils.data.TensorDataset(test_data)

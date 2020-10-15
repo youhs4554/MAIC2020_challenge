@@ -1,0 +1,13 @@
+arch: "conv2d_r50"
+batch_per_gpu: 128
+lr: 0.1
+num_workers: 16
+transform: "image"
+n_epochs: 100
+save_top_k: 5
+logdir: "experiments"
+data_root: "/data/.cache/datasets/MAIC2020"
+use_ext: false
+single_ch: false
+focal_loss: true
+ensemble_infer: true

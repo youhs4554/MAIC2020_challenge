@@ -8,7 +8,7 @@ class TransformerModel_MTL(nn.Module):
     def __init__(self, n_cls, *args, **kwargs):
         super().__init__()
         if n_cls == 2:
-            n_cls = 1  # sigmoid -> bce on single node
+            n_cls = 1  # single node
 
         transformer = nn.Transformer(*args, **kwargs)
 
@@ -44,7 +44,6 @@ class TransformerModel_MTL(nn.Module):
 
         # classification task
         logits_out = self.logits(cls_token)
-        logits_out = torch.sigmoid(logits_out)
 
         return memory, logits_out
 
@@ -104,7 +103,6 @@ class TransformerModel(nn.Module):
         output = self.transformer_encoder(src, self.src_mask)
         output = output.view(-1, 2000)
         output = self.decoder(output)
-        output = torch.sigmoid(output)
 
         return output
 

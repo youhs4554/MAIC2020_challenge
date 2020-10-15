@@ -4,6 +4,29 @@ import os
 import tqdm
 import torch.utils.data
 from imblearn.under_sampling import *
+import cv2
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+
+
+def raw_signals_to_image_arr(inputs):
+    fig = Figure(frameon=False, figsize=(16/9*4, 4))
+    canvas = FigureCanvas(fig)
+    ax = fig.gca()
+    ax.plot(inputs)
+    ax.axis('off'), ax.set_xticks([]), ax.set_yticks([])
+
+    fig.tight_layout()
+    fig.subplots_adjust(left=0, bottom=0, right=1,
+                        top=1, hspace=0, wspace=0)
+    canvas.draw()       # draw the canvas, cache the renderer
+    foo, (width, height) = canvas.print_to_buffer()
+
+    # Convert to a NumPy array.
+    image_arr = np.fromstring(foo, np.uint8).reshape((height, width, 4))
+    image_arr = cv2.cvtColor(image_arr, cv2.COLOR_RGBA2RGB)
+
+    return image_arr
 
 
 def random_undersampling(X_imb, y_imb):
@@ -66,7 +89,7 @@ def prepare_data(df, phase="train", save_dir="../data/processed", SRATE=100, MIN
         non_event_idx = []
         while i < len(vals) - SRATE * (20 + (1 + MINUTES_AHEAD) * 60):
             segx = vals[i:i + SRATE * 20]
-            segy = vals[i + SRATE * (20 + MINUTES_AHEAD * 60)                        :i + SRATE * (20 + (1 + MINUTES_AHEAD) * 60)]
+            segy = vals[i + SRATE * (20 + MINUTES_AHEAD * 60):i + SRATE * (20 + (1 + MINUTES_AHEAD) * 60)]
 
             # 결측값 10% 이상이면
             if np.mean(np.isnan(segx)) > 0.1 or \

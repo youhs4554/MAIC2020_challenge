@@ -7,7 +7,7 @@ class BCE_with_class_weights(nn.Module):
     def __init__(self, class_weights={0: 1, 1: 10}):
         super().__init__()
         self.class_weights = class_weights
-        self.criterion = nn.BCELoss(reduction='none')
+        self.criterion = nn.BCEWithLogitsLoss(reduction='none')
 
     def forward(self, y_pred, y_true):
         weight = torch.tensor(
@@ -30,7 +30,7 @@ class WeightedFocalLoss(nn.Module):
         self.gamma = gamma
 
     def forward(self, inputs, targets):
-        BCE_loss = F.binary_cross_entropy(
+        BCE_loss = F.binary_cross_entropy_with_logits(
             inputs, targets, reduction='none')
         targets = targets.type(torch.long)
         at = self.alpha.gather(0, targets.data.view(-1))

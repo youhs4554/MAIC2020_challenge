@@ -46,7 +46,7 @@ if __name__ == "__main__":
         n_cls=2, d_model=512, nhead=8, num_encoder_layers=6)
 
     rec_loss = nn.MSELoss()
-    cls_loss = nn.BCELoss()
+    cls_loss = nn.BCEWithLogitsLoss()
 
     if torch.cuda.device_count() > 1:
         model = nn.DataParallel(model)

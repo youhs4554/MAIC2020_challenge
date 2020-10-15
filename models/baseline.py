@@ -28,6 +28,5 @@ class BasicConv1d(nn.Module):
         x = F.adaptive_avg_pool1d(x, (1,)).flatten(
             1)  # avg-pool along with time-axis
         x = self.classifier(x)
-        x = torch.sigmoid(x)  # sigmoid output
 
         return x

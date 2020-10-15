@@ -113,7 +113,6 @@ class NL_Conv1d(nn.Module):
             x = torch.cat((x, ext_emb), dim=1)
 
         x = self.classifier(x)
-        x = torch.sigmoid(x)  # sigmoid output
 
         return x
 

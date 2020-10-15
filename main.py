@@ -18,10 +18,12 @@ from models.shufflenet import shufflenet_v2
 from models.transformers.transformers import TransformerModel_MTL, transformers
 
 
-from datasets.maic2020 import MAIC2020, MAIC2020_rec, prepare_test_dataset
+from datasets.maic2020 import MAIC2020, MAIC2020_rec, MAIC2020_image, prepare_test_dataset
 from utils.metrics import *
 from utils.losses import WeightedFocalLoss
 import torch.nn.functional as F
+import torchvision.transforms as TF
+import torchvision.models.resnet as resnet_module
 import argparse
 import pytorch_lightning as pl
 from pytorch_lightning import loggers as pl_loggers
@@ -53,6 +55,15 @@ def _build_model(arch):
     elif arch == "transformer_mtl":
         model = TransformerModel_MTL(
             n_cls=2, d_model=512, nhead=8, num_encoder_layers=6)
+    elif arch.startswith("conv2d_r"):
+        suffix = "conv2d_r"
+        resnet_arch = ("resnet" + arch[len(suffix):]).split("_")[0]
+        model = getattr(resnet_module, resnet_arch)()
+        model.fc = nn.Linear(model.fc.in_features, 1)
+    elif arch.startswith("conv2d_efficient"):
+        from efficientnet_pytorch import EfficientNet
+        pretrained_name = arch.split("_")[1]
+        model = EfficientNet.from_pretrained(pretrained_name, num_classes=1)
 
     return model
 
@@ -98,6 +109,9 @@ class LitModel(pl.LightningModule):
             if self.hparams.arch == "shufflenet_v2":
                 # reshape 1d -> 2d
                 x_seg = x_seg.view(-1, 1, 40, 50)
+            elif "2d" in self.hparams.arch:
+                # do nothing
+                pass
             else:
                 x_seg = x_seg.view(-1, 20, 100)
         # replace input data
@@ -119,7 +133,7 @@ class LitModel(pl.LightningModule):
             x_seg, label = batch
             logits_out = self(x_seg)
 
-        cls_crit = nn.BCELoss()
+        cls_crit = nn.BCEWithLogitsLoss()
         if self.hparams.focal_loss:
             cls_crit = WeightedFocalLoss()
         _losses["cls"] = cls_crit(logits_out, label.float())
@@ -145,7 +159,7 @@ class LitModel(pl.LightningModule):
 
     def training_step(self, batch, batch_nb):
         loss, label, logits_out = self.step(batch)
-        return {"loss": loss, "y_true": label.detach(), "y_score": logits_out.detach()}
+        return {"loss": loss, "y_true": label.detach(), "y_score": torch.sigmoid(logits_out).detach()}
 
     def training_step_end(self, metrics):
         # aggregate losses from multi-gpu
@@ -167,7 +181,7 @@ class LitModel(pl.LightningModule):
 
     def validation_step(self, batch, batch_nb):
         loss, label, logits_out = self.step(batch)
-        return {"loss": loss, "y_true": label.detach(), "y_score": logits_out.detach()}
+        return {"loss": loss, "y_true": label.detach(), "y_score": torch.sigmoid(logits_out).detach()}
 
     def validation_epoch_end(self, outputs):
         avg_loss = torch.stack([o["loss"] for o in outputs]).mean()
@@ -293,8 +307,16 @@ if __name__ == "__main__":
         mean = 85.15754
         std = 22.675957
         def transform(x): return (x-mean)/std
+    elif args.transform == "image":
+        transform = TF.Compose([
+            TF.Resize((224, 224)),
+            TF.ToTensor(),
+            TF.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
 
-    if args.arch.endswith("mtl"):
+    if "2d" in args.arch:
+        data_init = MAIC2020_image
+    elif args.arch.endswith("mtl"):
         # (current + future)
         data_init = MAIC2020_rec
     else:
@@ -306,8 +328,7 @@ if __name__ == "__main__":
     val_ds = data_init(SRATE=100, MINUTES_AHEAD=5,
                        transform=transform, use_ext=args.use_ext, train=False)
     test_ds = prepare_test_dataset(
-        args.data_root, transform=transform, use_ext=args.use_ext)
-
+        args.data_root, transform=transform, use_ext=args.use_ext, use_image="2d" in args.arch)
     print('\033[1m' + '\033[93m' + f"Train: {len(train_ds)}")
     print('\033[1m' + '\033[96m' + f"Validation: {len(val_ds)}" + '\033[0m')
 
