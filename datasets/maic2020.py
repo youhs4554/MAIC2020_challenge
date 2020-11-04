@@ -19,6 +19,8 @@ class MAIC2020(torch.utils.data.Dataset):
                  SRATE=100, MINUTES_AHEAD=5, VALIDATION_SPLIT=0.2,
                  transform=None, ext_scaler=None, use_ext=False, train=True, composition=True):
 
+        self.train = train
+
         # provide composition of target for reconstruction and classification task
         self.composition = composition
 
@@ -54,7 +56,7 @@ class MAIC2020(torch.utils.data.Dataset):
         # 0: signal_ids, 1~4: externals, 5~: raw_signals
         signal_ids, self.ext, self.X = np.split(self.X, [1, 5, ], axis=1)
 
-        self.y_true = self.y_true[:, [1]].astype(bool)
+        self.y_true = self.y_true[:, [1]].astype(float)
 
         self.X = self.X.astype("float")
         self.ext = self.ext.astype("float")
@@ -90,12 +92,15 @@ class MAIC2020(torch.utils.data.Dataset):
         x_sample = self.X[ix]
         y_sample = self.y_true[ix]
 
+        # expand channel dim
+        x_sample = x_sample[:, None]
+
+        if self.transform is not None:
+            x_sample = self.transform(x_sample, is_training=self.train)
+
         # input : 20 [sec] => 20 * (100 [Hz]) = 2,000 [sample points]
         x_sample = torch.tensor(x_sample).view(-1, self.SRATE * 20).float()
         y_sample = torch.tensor(y_sample).long()
-
-        if self.transform is not None:
-            x_sample = self.transform(x_sample)
 
         if self.use_ext:
             return x_sample, ext_sample, y_sample
@@ -117,15 +122,20 @@ class MAIC2020_rec(MAIC2020):
         # current signal
         current_X = self.X[ix]
 
+        # expand channel dim
+        current_X = current_X[:, None]
+        target_X = target_X[:, None]
+
+        if self.transform is not None:
+            current_X = self.transform(current_X, is_training=self.train)
+            target_X = self.transform(target_X, is_training=self.train)
+
         # input : 20 [sec] => 20 * (100 [Hz]) = 2,000 [sample points]
         current_X = torch.tensor(current_X).view(-1, self.SRATE * 20).float()
 
         # target : 60 [sec] after 5min
         target_X = torch.tensor(target_X).view(-1, self.SRATE * 60).float()
 
-        if self.transform is not None:
-            current_X = self.transform(current_X)
-            target_X = self.transform(target_X)
         if self.composition:
             # provide classification target along with rec. targets
             y_sample = self.y_true[ix]
@@ -219,17 +229,18 @@ def prepare_test_dataset(data_root, transform=None, use_ext=False, use_image=Fal
             data_root, 'x_test.npz'), test_data)
         print('done', flush=True)
 
-    test_data = torch.from_numpy(test_data).float()
-
     if use_image:
+        test_data = torch.from_numpy(test_data).float()
         return CustomTensorDataset(tensors=test_data[:, 4:], transform=transform)
     else:
         if not use_ext:
             test_data = test_data[:, 4:]
             if transform is not None:
-                test_data = transform(test_data)
+                test_data = transform(test_data, is_training=False)
         else:
             if transform is not None:
-                test_data[:, 4:] = transform(test_data[:, 4:])
+                test_data[:, 4:] = transform(
+                    test_data[:, 4:], is_training=False)
 
+        test_data = torch.from_numpy(test_data).float()
         return torch.utils.data.TensorDataset(test_data)

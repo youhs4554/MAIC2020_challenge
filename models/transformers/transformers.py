@@ -14,6 +14,7 @@ class TransformerModel_MTL(nn.Module):
 
         d_model = transformer.d_model
         self.embedding = nn.Linear(100, d_model, bias=False)
+        self.pos_encoder = PositionalEncoding(d_model, 0.5)
         self.encoder = transformer.encoder
         self.decoder = transformer.decoder
         self.dense = nn.Linear(d_model, 100)
@@ -33,6 +34,7 @@ class TransformerModel_MTL(nn.Module):
         # each vector represents samples for 1 sec
         src = src.view(-1, 21, 100).transpose(0, 1)  # (S+1,N,E)
         src = self.embedding(src)
+        src = self.pos_encoder(src)
 
         encoder_out = self.encoder(src)
 
@@ -57,6 +59,7 @@ class TransformerModel_MTL(nn.Module):
         tgt = tgt.view(-1, 60,
                        100).transpose(0, 1)  # (T,N,E)
         tgt = self.embedding(tgt)
+        tgt = self.pos_encoder(tgt)
 
         # reconstruction task
         decoder_out = self.decoder(tgt, memory)

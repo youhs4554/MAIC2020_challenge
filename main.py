@@ -10,17 +10,18 @@ import yaml
 import glob
 from natsort import natsorted
 
+from models.strided_convnet import StridedConvNet
 from models.baseline import BasicConv1d
 import models.resnet1d
 from models.non_local.nl_conv1d import NL_Conv1d
 from models.shufflenet import shufflenet_v2
 
 from models.transformers.transformers import TransformerModel_MTL, transformers
-
+from models.ensemble import ensemble_of_shufflenet_stridedconv_resnet34NL
 
 from datasets.maic2020 import MAIC2020, MAIC2020_rec, MAIC2020_image, prepare_test_dataset
 from utils.metrics import *
-from utils.losses import WeightedFocalLoss
+from utils.losses import BCE_with_class_weights, WeightedFocalLoss
 import torch.nn.functional as F
 import torchvision.transforms as TF
 import torchvision.models.resnet as resnet_module
@@ -35,6 +36,8 @@ def _build_model(arch):
     if arch == "conv1d_lenet":
         # Define model (preproduce baseline implemented at https://github.com/vitaldb/maic2020/blob/master/maic_data_cnn.py)
         model = BasicConv1d(dims=[1, 64, 64, 64, 64, 64, 64])
+    if arch == "conv_strided":
+        model = StridedConvNet()
     elif arch.startswith("conv1d_r"):
         suffix = "conv1d_r"
         resnet_arch = ("resnet" + arch[len(suffix):]).split("_")[0]
@@ -64,6 +67,8 @@ def _build_model(arch):
         from efficientnet_pytorch import EfficientNet
         pretrained_name = arch.split("_")[1]
         model = EfficientNet.from_pretrained(pretrained_name, num_classes=1)
+    elif arch == "ensemble":
+        model = ensemble_of_shufflenet_stridedconv_resnet34NL()
 
     return model
 
@@ -94,7 +99,8 @@ class LitModel(pl.LightningModule):
                 return logits_out, decoder_out
         elif self.hparams.use_ext:
             x_seg, ext = inputs
-            raise NotImplementedError("comming soon!")
+            # raise NotImplementedError("comming soon!")
+            return self.pytorch_model(x_seg, ext)
         else:
             x_seg, = inputs
 
@@ -134,8 +140,9 @@ class LitModel(pl.LightningModule):
             logits_out = self(x_seg)
 
         cls_crit = nn.BCEWithLogitsLoss()
+        # cls_crit = BCE_with_class_weights()
         if self.hparams.focal_loss:
-            cls_crit = WeightedFocalLoss()
+            cls_crit = WeightedFocalLoss(smoothing=0.1)
         _losses["cls"] = cls_crit(logits_out, label.float())
         loss = sum(_losses.values())
 
@@ -146,7 +153,10 @@ class LitModel(pl.LightningModule):
             x_seg, ext = torch.split(test_batch[0], [4, 2000], dim=1)
             logits_out = self(x_seg, ext)
         else:
-            x_seg, = test_batch
+            if len(test_batch) == 2:
+                x_seg, _ = test_batch
+            else:
+                x_seg, = test_batch
             logits_out = self(x_seg)
 
         return logits_out
@@ -198,7 +208,7 @@ class LitModel(pl.LightningModule):
 
     def test_step(self, test_batch, batch_nb):
         logits_out = self.eval_step(test_batch)
-        return {"y_score": logits_out}
+        return {"y_score": torch.sigmoid(logits_out)}
 
     def test_end(self, outputs):
         results = []
@@ -217,51 +227,20 @@ class LitModel(pl.LightningModule):
         # to tensor
         auprc = torch.tensor(auprc).to(y_score)
         auc = torch.tensor(auc).to(y_score)
-
         return auprc, auc
-
-    # learning rate warm-up
-    def optimizer_step(
-        self,
-        current_epoch,
-        batch_idx,
-        optimizer,
-        optimizer_idx,
-        second_order_closure=None,
-        using_native_amp=None,
-    ):
-        # use lr proposed by lr_finder
-        lr = self.hparams.lr
-        until = 5 * len(self.train_dataloader())  # warm-up for 5 epochs
-        # warm up lr
-        if self.trainer.global_step < until:
-            lr_scale = min(1.0, float(self.trainer.global_step + 1) / until)
-            for pg in optimizer.param_groups:
-                pg["lr"] = lr_scale * lr
-        else:
-            self.lr_sch[optimizer_idx].step()
-
-        # log for learning rate
-        lr_val = optimizer.param_groups[0]["lr"]
-        self.tb.add_scalar("lr", lr_val, self.trainer.global_step)
-
-        # update params
-        optimizer.step()
-        optimizer.zero_grad()
 
     def configure_optimizers(self):
         optimizer = torch.optim.SGD(
             self.pytorch_model.parameters(), lr=self.hparams.lr, momentum=0.95
         )
-
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(
             optimizer,
-            T_max=len(self.train_dataloader()) * self.hparams.n_epochs,
-            eta_min=self.hparams.lr * (1 / 16),
+            max_lr=self.hparams.lr,
+            total_steps=self.hparams.n_epochs,
+            pct_start=0.3,
+            base_momentum=0.9 * 0.95,
+            max_momentum=0.95,
         )
-
-        self.lr_sch = [scheduler]
-
         return [optimizer], [scheduler]
 
 
@@ -291,28 +270,113 @@ def parse_args(parser):
     return args
 
 
+def cross_validate(args, train_ds, test_ds, transform=None, n_folds=5):
+    # define test dataloader
+    test_dataloader = DataLoader(
+        test_ds, batch_size=args.batch_per_gpu * torch.cuda.device_count(), num_workers=args.num_workers, shuffle=False, pin_memory=torch.cuda.is_available())
+
+    from sklearn.model_selection import KFold, StratifiedKFold
+    # TODO. Stratified CV
+    y_train = np.concatenate([d.y_true for d in train_ds.datasets])
+    kfold = StratifiedKFold(n_splits=n_folds, random_state=0, shuffle=True)
+
+    for fold, (train_indices, valid_indices) in enumerate(kfold.split(np.ones((len(train_ds), 1)), y_train)):
+        train_ds_ = torch.utils.data.Subset(train_ds, train_indices)
+        valid_ds_ = torch.utils.data.Subset(train_ds, valid_indices)
+
+        print(
+            f"[Train] fold-{fold} : {np.unique(y_train[train_indices], return_counts=True)}")
+        print(
+            f"[Valid] fold-{fold} : {np.unique(y_train[valid_indices], return_counts=True)}")
+
+        train_dataloader = DataLoader(
+            train_ds, batch_size=args.batch_per_gpu * torch.cuda.device_count(), num_workers=args.num_workers, shuffle=True, pin_memory=torch.cuda.is_available())
+        val_dataloader = DataLoader(
+            val_ds, batch_size=args.batch_per_gpu * torch.cuda.device_count(), num_workers=args.num_workers, shuffle=False, pin_memory=torch.cuda.is_available())
+
+        tb_logger = pl_loggers.TensorBoardLogger(
+            args.logdir, name=args.arch, version=f"fold_{fold+1}")
+        checkpoint_callback = ModelCheckpoint(filepath=tb_logger.log_dir + "/{epoch}-{val_auprc:.4f}",
+                                              save_top_k=args.save_top_k, monitor="val_auprc", mode='max')
+        early_stop_callback = EarlyStopping(
+            monitor='val_auprc',
+            patience=5,
+            verbose=True,
+            mode='max'
+        )
+        from pytorch_lightning.callbacks import LearningRateLogger
+        lr_logger = LearningRateLogger(logging_interval='step')
+
+        # model
+        model = LitModel(args)
+
+        # training
+        trainer = pl.Trainer(
+            logger=tb_logger,
+            checkpoint_callback=checkpoint_callback,
+            early_stop_callback=early_stop_callback,
+            callbacks=[lr_logger],
+            num_sanity_val_steps=0, gpus=torch.cuda.device_count(), distributed_backend='dp',
+            max_epochs=100)
+        trainer.fit(model, train_dataloader, val_dataloader)
+
+        predictions = trainer.test(model, test_dataloaders=test_dataloader)[
+            0]["results"][:len(test_ds)]
+
+        # save scores as .txt file
+        print('\x1b[6;30;42m' +
+              f"saving resulting file at {tb_logger.log_dir}/pred_y.txt..." + '\x1b[0m', flush=True, end="")
+        np.savetxt(os.path.join(tb_logger.log_dir, "pred_y.txt"), predictions)
+        print('\x1b[6;30;42m' + "Done!" + '\033[0m', flush=True, end="\n")
+
+
 if __name__ == "__main__":
     # fix seed for reproductivity
     torch.manual_seed(0)
 
     args = parse_args(create_parser())
 
-    """
-        STEP 1 : prepare dataset
-    """
+    from utils.data_augmentation import DA_Permutation, DA_TimeWarp, DA_Jitter, DA_Scaling
+
+    def apply_random_augmentations(x, p=.5):
+        if random.random() < p:
+            x = DA_Permutation(x)
+        if random.random() < p:
+            x = DA_TimeWarp(x)
+        if random.random() < p:
+            x = DA_Jitter(x)
+        # if random.random() < p:
+        #     x = DA_Scaling(x, sigma=0.1)
+
+        return x
+
     if args.transform == "offset":
         baseline = 65.0
-        def transform(x): return (x-baseline)/baseline
+
+        def transform(x, is_training):
+            if is_training:
+                x = apply_random_augmentations(x)
+            return (x-baseline)/baseline
     elif args.transform == "standard":
         mean = 85.15754
         std = 22.675957
-        def transform(x): return (x-mean)/std
+
+        def transform(x, is_training):
+            if is_training:
+                x = apply_random_augmentations(x)
+            return (x-mean)/std
     elif args.transform == "image":
-        transform = TF.Compose([
-            TF.Resize((224, 224)),
-            TF.ToTensor(),
-            TF.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ])
+        # transform = TF.Compose([
+        #     TF.Resize((224, 224)),
+        #     TF.ToTensor(),
+        #     TF.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        # ])
+        raise NotImplementedError(
+            "The ImageTransform is not working anymore!")
+
+    # TODO. Augmentation method for time-series data
+    # code : https://nbviewer.jupyter.org/github/terryum/Data-Augmentation-For-Wearable-Sensor-Data/blob/master/Example_DataAugmentation_TimeseriesData.ipynb
+    # paper : https://arxiv.org/pdf/1706.00527.pdf
 
     if "2d" in args.arch:
         data_init = MAIC2020_image
@@ -327,75 +391,11 @@ if __name__ == "__main__":
                          transform=transform, use_ext=args.use_ext, train=True)
     val_ds = data_init(SRATE=100, MINUTES_AHEAD=5,
                        transform=transform, use_ext=args.use_ext, train=False)
+    train_ds = torch.utils.data.ConcatDataset([train_ds, val_ds])
     test_ds = prepare_test_dataset(
         args.data_root, transform=transform, use_ext=args.use_ext, use_image="2d" in args.arch)
     print('\033[1m' + '\033[93m' + f"Train: {len(train_ds)}")
     print('\033[1m' + '\033[96m' + f"Validation: {len(val_ds)}" + '\033[0m')
 
-    train_dataloader = DataLoader(
-        train_ds, batch_size=args.batch_per_gpu * torch.cuda.device_count(), num_workers=args.num_workers, shuffle=True, pin_memory=torch.cuda.is_available())
-    val_dataloader = DataLoader(
-        val_ds, batch_size=args.batch_per_gpu * torch.cuda.device_count(), num_workers=args.num_workers, shuffle=False, pin_memory=torch.cuda.is_available())
-    test_dataloader = DataLoader(
-        test_ds, batch_size=args.batch_per_gpu * torch.cuda.device_count(), num_workers=args.num_workers, shuffle=False, pin_memory=torch.cuda.is_available())
-
-    """
-        STEP 2 : build model
-    """
-    model = LitModel(args)
-
-    """
-        STEP 3 : configure trainer -> fit
-    """
-
-    tb_logger = pl_loggers.TensorBoardLogger(args.logdir, name=args.arch)
-
-    checkpoint_callback = ModelCheckpoint(
-        os.path.join(args.logdir, tb_logger.name,
-                     f"version_{tb_logger.version}", "checkpoints", "{epoch}-{val_auprc:.4f}"),
-        save_top_k=args.save_top_k, monitor="val_auprc", mode='max')
-
-    early_stop_callback = EarlyStopping(
-        monitor='val_auprc',
-        patience=10,
-        verbose=True,
-        mode='max'
-    )
-
-    trainer = pl.Trainer(
-        logger=tb_logger,
-        early_stop_callback=early_stop_callback,
-        checkpoint_callback=checkpoint_callback,
-        num_sanity_val_steps=0, gpus=torch.cuda.device_count(), distributed_backend='dp',
-        max_epochs=args.n_epochs)
-    trainer.fit(model, train_dataloader, val_dataloader)
-
-    """
-        STEP 4 : test and save a result file to submit
-    """
-    if args.ensemble_infer:
-        print('\033[1m' + '\033[92m' + '\033[4m' +
-              'Ensemble Infer : ENABLED' + '\033[0m')
-
-        ckpt_dir = os.path.join(args.logdir, tb_logger.name,
-                                f"version_{tb_logger.version}", "checkpoints", "*")
-        results = []
-        for ckpt in natsorted(glob.glob(ckpt_dir)):
-            results.append(trainer.test(test_dataloaders=test_dataloader, ckpt_path=ckpt)[0][
-                "results"]
-            )
-        results = np.mean(results, axis=0)
-
-    else:
-        best_ckpt = checkpoint_callback.best_model_path
-        results = trainer.test(model, test_dataloaders=test_dataloader, ckpt_path=best_ckpt)[0][
-            "results"]
-
-    # save scores as .txt file
-    exp_dir = os.path.join(args.logdir, tb_logger.name,
-                           f"version_{tb_logger.version}")
-
-    print('\x1b[6;30;42m' +
-          f"saving resulting file at {exp_dir}/pred_y.txt..." + '\x1b[0m', flush=True, end="")
-    np.savetxt(os.path.join(exp_dir, "pred_y.txt"), results)
-    print('\x1b[6;30;42m' + "Done!" + '\033[0m', flush=True, end="\n")
+    cross_validate(
+        args, train_ds, test_ds, transform)
